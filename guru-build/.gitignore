@@ -1,0 +1,64 @@
+# Environment Variables - NEVER commit these!
+.env
+.env.*
+!.env.example
+*.env
+**/.env
+**/.env.*
+!**/.env.example
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+.gemini/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+server.log
+
+# Dependencies
+node_modules/
+venv/
+env/
+.venv/
+
+# Build outputs
+dist/
+build/
+*.pyc
+__pycache__/
+
+# Expo
+.expo/
+web-build/
+
+# Secrets and credentials
+*credentials.json
+*firebase-credentials.json
+*.pem
+*.key
+*.p12
+*.p8
+*.mobileprovision
+*.jks
+
+# Temporary files
+*.tmp
+*.temp
+.null.swp
