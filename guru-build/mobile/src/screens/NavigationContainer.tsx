@@ -83,12 +83,18 @@ interface PodcastScheduleData {
   description?: string;
 }
 
+interface WorkoutScheduleData {
+  title: string;
+  description: string;
+}
+
 export const NavigationContainer: React.FC = () => {
   const [activePage, setActivePage] = useState<Page>('one');
   const [entryDetailParams, setEntryDetailParams] = useState<EntryDetailParams | null>(null);
   const [entries, setEntries] = useState<Array<{ id: string; timestamp: Date; notes?: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [podcastScheduleData, setPodcastScheduleData] = useState<PodcastScheduleData | null>(null);
+  const [workoutScheduleData, setWorkoutScheduleData] = useState<WorkoutScheduleData | null>(null);
 
   // Load entries from the API on mount
   useEffect(() => {
@@ -178,16 +184,21 @@ export const NavigationContainer: React.FC = () => {
     setActivePage('two');
   };
 
+  const handleNavigateToCalendarWithWorkout = (workoutData: WorkoutScheduleData) => {
+    setWorkoutScheduleData(workoutData);
+    setActivePage('two');
+  };
+
   const renderPage = () => {
     switch (activePage) {
       case 'one':
         return <PageOne onNavigateToEntries={() => setActivePage('entries')} />;
       case 'two':
-        return <PageTwo podcastScheduleData={podcastScheduleData} onClearPodcastData={() => setPodcastScheduleData(null)} />;
+        return <PageTwo podcastScheduleData={podcastScheduleData} workoutScheduleData={workoutScheduleData} onClearPodcastData={() => setPodcastScheduleData(null)} onClearWorkoutData={() => setWorkoutScheduleData(null)} />;
       case 'three':
         return <PageThree onNavigateToCalendar={handleNavigateToCalendarWithPodcast} />;
       case 'four':
-        return <WorkoutScreen />;
+        return <WorkoutScreen onNavigateToCalendar={handleNavigateToCalendarWithWorkout} />;
       case 'five':
         return <PageFive />;
       case 'entries':

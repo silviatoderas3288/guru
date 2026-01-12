@@ -116,9 +116,16 @@ interface PodcastScheduleData {
   description?: string;
 }
 
+interface WorkoutScheduleData {
+  title: string;
+  description: string;
+}
+
 interface PageTwoProps {
   podcastScheduleData?: PodcastScheduleData | null;
+  workoutScheduleData?: WorkoutScheduleData | null;
   onClearPodcastData?: () => void;
+  onClearWorkoutData?: () => void;
 }
 
 // Swipeable List Item Component
@@ -183,7 +190,7 @@ const SwipeableListItem: React.FC<SwipeableListItemProps> = ({ children, onDelet
   );
 };
 
-export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, onClearPodcastData }) => {
+export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutScheduleData, onClearPodcastData, onClearWorkoutData }) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -304,6 +311,76 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, onClearPo
 
     handlePodcastScheduling();
   }, [podcastScheduleData, isAuthenticated]);
+
+  // Handle workout scheduling data from WorkoutScreen
+  useEffect(() => {
+    const handleWorkoutScheduling = async () => {
+      if (workoutScheduleData && isAuthenticated) {
+        try {
+          // Create a new weekly goal with the workout title
+          const newGoal = await ListItemApiService.createListItem({
+            text: workoutScheduleData.title,
+            completed: false,
+            item_type: ListItemType.WEEKLY_GOAL,
+          });
+
+          const weeklyGoalItem: ListItem = {
+            id: newGoal.id,
+            text: newGoal.text,
+            completed: newGoal.completed,
+            calendar_event_id: newGoal.calendar_event_id,
+          };
+
+          // Add to weekly goals
+          setWeeklyGoals([...weeklyGoals, weeklyGoalItem]);
+
+          // Open schedule popup with workout data
+          setSelectedGoalForSchedule(weeklyGoalItem);
+          setActiveListType('weekly');
+          setEditingEventId(null);
+
+          // Set default times (current time + 1 hour)
+          const now = new Date();
+          const startTime = new Date(now.getTime() + 60 * 60 * 1000); // +1 hour
+          const endTime = new Date(startTime.getTime() + 60 * 60 * 1000); // +1 hour from start
+
+          // Pre-fill the form with workout data
+          setEventTitle(workoutScheduleData.title);
+          setEventDate(now.toISOString().split('T')[0]);
+          setEventStartTime(startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
+          setEventEndTime(endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
+          setEventLocation('');
+          setEventImportance('Medium');
+          setEventDescription(workoutScheduleData.description || '');
+          setEventReminder('30 minutes before');
+          setEventGuests('');
+
+          // Set Date objects for pickers
+          setEventDateObj(now);
+          setEventStartTimeObj(startTime);
+          setEventEndTimeObj(endTime);
+
+          // Show the schedule popup
+          setShowSchedulePopup(true);
+
+          // Clear the workout data after processing
+          if (onClearWorkoutData) {
+            onClearWorkoutData();
+          }
+        } catch (error) {
+          console.error('Error creating workout goal item:', error);
+          Alert.alert('Error', 'Failed to create workout item. Please try again.');
+
+          // Still clear the data even on error
+          if (onClearWorkoutData) {
+            onClearWorkoutData();
+          }
+        }
+      }
+    };
+
+    handleWorkoutScheduling();
+  }, [workoutScheduleData, isAuthenticated]);
 
   const initializeScreen = async () => {
     try {
