@@ -16,6 +16,25 @@ PODCAST_INDEX_API_SECRET = os.getenv('PODCAST_INDEX_API_SECRET')
 PODCAST_INDEX_BASE_URL = 'https://api.podcastindex.org/api/1.0'
 
 
+def fix_image_url(url: str) -> str:
+    """
+    Convert HTTP image URLs to HTTPS for mobile app compatibility.
+    Many podcast images use HTTP but mobile apps require HTTPS.
+    """
+    if not url:
+        return url
+
+    # Convert BBC images to HTTPS
+    if url.startswith('http://ichef.bbci.co.uk'):
+        return url.replace('http://', 'https://')
+
+    # Convert other HTTP URLs to HTTPS
+    if url.startswith('http://'):
+        return url.replace('http://', 'https://')
+
+    return url
+
+
 def get_podcast_index_headers():
     """
     Generate authentication headers for Podcast Index API
@@ -72,7 +91,7 @@ async def search_podcasts(
                 'name': feed.get('title', ''),
                 'author': feed.get('author', ''),
                 'description': feed.get('description', ''),
-                'artwork': feed.get('artwork', feed.get('image', '')),
+                'artwork': fix_image_url(feed.get('artwork', feed.get('image', ''))),
                 'categories': feed.get('categories', {}),
                 'url': feed.get('url', ''),
                 'website': feed.get('link', ''),
@@ -129,7 +148,7 @@ async def get_trending_podcasts(
                 'name': feed.get('title', ''),
                 'author': feed.get('author', ''),
                 'description': feed.get('description', ''),
-                'artwork': feed.get('artwork', feed.get('image', '')),
+                'artwork': fix_image_url(feed.get('artwork', feed.get('image', ''))),
                 'categories': feed.get('categories', {}),
                 'url': feed.get('url', ''),
                 'website': feed.get('link', ''),
@@ -184,7 +203,7 @@ async def get_podcast_by_id(podcast_id: str):
             'name': feed.get('title', ''),
             'author': feed.get('author', ''),
             'description': feed.get('description', ''),
-            'artwork': feed.get('artwork', feed.get('image', '')),
+            'artwork': fix_image_url(feed.get('artwork', feed.get('image', ''))),
             'categories': feed.get('categories', {}),
             'url': feed.get('url', ''),
             'website': feed.get('link', ''),
@@ -235,7 +254,7 @@ async def get_podcast_episodes(
                 'duration': item.get('duration', 0),
                 'enclosureUrl': item.get('enclosureUrl', ''),
                 'enclosureType': item.get('enclosureType', ''),
-                'image': item.get('image', item.get('feedImage', '')),
+                'image': fix_image_url(item.get('image', item.get('feedImage', ''))),
                 'feedId': item.get('feedId', podcast_id),
                 'link': item.get('link', '')
             })
@@ -321,7 +340,7 @@ async def get_recent_episodes(
                 'datePublished': item.get('datePublished', 0),
                 'duration': item.get('duration', 0),
                 'enclosureUrl': item.get('enclosureUrl', ''),
-                'image': item.get('image', item.get('feedImage', '')),
+                'image': fix_image_url(item.get('image', item.get('feedImage', ''))),
                 'feedId': str(item.get('feedId', '')),
                 'feedTitle': item.get('feedTitle', ''),
                 'link': item.get('link', '')
