@@ -12,6 +12,8 @@ from .workout_preference import WorkoutPreference
 from .meal_preference import MealPreference
 from .commute_preference import CommutePreference
 from .schedule_agent import ScheduleSuggestion, TaskCompletionFeedback, ScheduleHistory
+from .journal_entry import JournalEntry
+from .list_item import ListItem
 
 __all__ = [
     "User",
@@ -28,4 +30,6 @@ __all__ = [
     "ScheduleSuggestion",
     "TaskCompletionFeedback",
     "ScheduleHistory",
+    "JournalEntry",
+    "ListItem",
 ]

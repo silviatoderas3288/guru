@@ -1,0 +1,149 @@
+"""Scheduling Agent API routes."""
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List
+from datetime import date
+
+from app.database import get_db
+from app.schemas.schedule import (
+    GenerateScheduleRequest,
+    GenerateScheduleResponse,
+    RebalanceRequest,
+    TaskFeedbackRequest,
+    ScheduleStatusResponse,
+)
+from app.services.scheduling_agent_service import SchedulingAgentService
+from app.models.user import User
+
+router = APIRouter()
+
+
+# Dependency to get current user (reused from calendar routes)
+async def get_current_user(db: Session = Depends(get_db)) -> User:
+    """
+    Get current authenticated user.
+    For development, returns the most recently updated user.
+    TODO: Implement proper authentication middleware with JWT tokens
+    """
+    user = db.query(User).order_by(User.updated_at.desc()).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No user found. Please authenticate first."
+        )
+    return user
+
+
+@router.post("/generate", response_model=GenerateScheduleResponse)
+async def generate_schedule(
+    request: GenerateScheduleRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a new weekly schedule for the user.
+
+    This endpoint:
+    - Fetches user's tasks and goals
+    - Retrieves calendar events from Google Calendar
+    - Uses AI to intelligently schedule tasks, workouts, meals, etc.
+    - Returns a suggested schedule with reasoning and warnings
+    """
+    service = SchedulingAgentService(db, current_user)
+
+    try:
+        result = await service.generate_schedule(
+            week_start_date=request.weekStartDate,
+            include_goals=request.includeGoals,
+            force_regenerate=request.forceRegenerate,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate schedule: {str(e)}",
+        )
+
+
+@router.post("/rebalance", response_model=GenerateScheduleResponse)
+async def rebalance_schedule(
+    request: RebalanceRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Rebalance the schedule based on task feedback and calendar changes.
+
+    This endpoint:
+    - Accepts feedback on task completion and duration
+    - Detects calendar changes since last generation
+    - Re-optimizes the schedule based on new constraints
+    """
+    service = SchedulingAgentService(db, current_user)
+
+    try:
+        result = await service.rebalance_schedule(
+            tasks_feedback=request.tasksFeedback,
+            calendar_changes=request.calendarChanges,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to rebalance schedule: {str(e)}",
+        )
+
+
+@router.post("/feedback")
+async def submit_feedback(
+    request: TaskFeedbackRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Submit task completion feedback for learning.
+
+    This helps the AI improve future scheduling by learning:
+    - How long tasks actually take vs. estimates
+    - Which tasks are completed vs. skipped
+    - User's productivity patterns
+    """
+    service = SchedulingAgentService(db, current_user)
+
+    try:
+        await service.submit_feedback(feedback=request.feedback)
+        return {"message": "Feedback submitted successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit feedback: {str(e)}",
+        )
+
+
+@router.get("/status", response_model=ScheduleStatusResponse)
+async def get_schedule_status(
+    week_start_date: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the current schedule status for a specific week.
+
+    Returns:
+    - Whether a schedule has been generated for this week
+    - When it was last generated
+    - Completion rate of scheduled tasks
+    """
+    service = SchedulingAgentService(db, current_user)
+
+    try:
+        status_info = await service.get_schedule_status(
+            week_start_date=week_start_date,
+        )
+        return status_info
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get schedule status: {str(e)}",
+        )
