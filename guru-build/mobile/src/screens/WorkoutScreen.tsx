@@ -10,11 +10,13 @@ import {
   Alert,
   Image,
   ImageBackground,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { ListItemApiService } from '../services/listItemApi';
+import { WorkoutApiService, Workout, WorkoutSection, Exercise } from '../services/workoutApi';
 
 const SettingsIcon = () => (
   <Svg width="19" height="20" viewBox="0 0 19 20" fill="none">
@@ -60,105 +62,103 @@ const CalendarIcon = ({ color = '#FF9D00' }: { color?: string }) => (
   </Svg>
 );
 
-interface WorkoutExercise {
-  name: string;
-  sets?: string;
-  reps?: string;
-  duration?: string;
-}
+const EditIcon = ({ size = 20, color = '#4D5AEE' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M11 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V20C2 20.5304 2.21071 21.0391 2.58579 21.4142C2.96086 21.7893 3.46957 22 4 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V13"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M18.5 2.50001C18.8978 2.10219 19.4374 1.87869 20 1.87869C20.5626 1.87869 21.1022 2.10219 21.5 2.50001C21.8978 2.89784 22.1213 3.4374 22.1213 4.00001C22.1213 4.56262 21.8978 5.10219 21.5 5.50001L12 15L8 16L9 12L18.5 2.50001Z"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
 
-interface WorkoutSection {
-  id: string;
-  title: string;
-  completed: boolean;
-  exercises: WorkoutExercise[];
-}
+const TrashIcon = ({ size = 20, color = '#FF3B30' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M3 6H5H21"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
 
 interface WorkoutScreenProps {
   onNavigateToCalendar?: (workoutData: { title: string; description: string }) => void;
 }
 
 export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalendar }) => {
-  const [workouts, setWorkouts] = useState<WorkoutSection[]>([
-    {
-      id: '1',
-      title: 'Running',
-      completed: false,
-      exercises: [
-        { name: 'Warm-up jog', duration: '5 min' },
-        { name: 'Main run', duration: '20 min' },
-        { name: 'Cool down walk', duration: '5 min' },
-      ],
-    },
-    {
-      id: '2',
-      title: 'Strength Training - Arms',
-      completed: false,
-      exercises: [
-        { name: 'Bicep curls', sets: '3', reps: '12' },
-        { name: 'Tricep dips', sets: '3', reps: '10' },
-        { name: 'Push-ups', sets: '3', reps: '15' },
-        { name: 'Shoulder press', sets: '3', reps: '10' },
-      ],
-    },
-    {
-      id: '3',
-      title: 'Yoga',
-      completed: false,
-      exercises: [
-        { name: 'Sun salutations', duration: '10 min' },
-        { name: 'Warrior poses', duration: '10 min' },
-        { name: 'Stretching', duration: '10 min' },
-      ],
-    },
-    {
-      id: '4',
-      title: 'HIIT - Pilates',
-      completed: false,
-      exercises: [
-        { name: 'Mountain climbers', sets: '4', duration: '30 sec' },
-        { name: 'Plank', sets: '3', duration: '45 sec' },
-        { name: 'Leg raises', sets: '3', reps: '15' },
-        { name: 'Russian twists', sets: '3', reps: '20' },
-      ],
-    },
-    {
-      id: '5',
-      title: 'Strength Training - Legs',
-      completed: false,
-      exercises: [
-        { name: 'Squats', sets: '4', reps: '15' },
-        { name: 'Lunges', sets: '3', reps: '12 each leg' },
-        { name: 'Leg press', sets: '3', reps: '12' },
-        { name: 'Calf raises', sets: '3', reps: '20' },
-      ],
-    },
-  ]);
-
+  const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [weeklyGoalIds, setWeeklyGoalIds] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+
+  // Modal states
+  const [showAddWorkoutModal, setShowAddWorkoutModal] = useState(false);
+  const [showAddSectionModal, setShowAddSectionModal] = useState(false);
+  const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
+  const [showEditWorkoutModal, setShowEditWorkoutModal] = useState(false);
+  const [showEditSectionModal, setShowEditSectionModal] = useState(false);
+  const [showEditExerciseModal, setShowEditExerciseModal] = useState(false);
+
+  // Form states
+  const [currentWorkout, setCurrentWorkout] = useState<Workout | null>(null);
+  const [currentSection, setCurrentSection] = useState<WorkoutSection | null>(null);
+  const [currentExercise, setCurrentExercise] = useState<Exercise | null>(null);
+  const [workoutTitle, setWorkoutTitle] = useState('');
+  const [workoutDescription, setWorkoutDescription] = useState('');
+  const [sectionTitle, setSectionTitle] = useState('');
+  const [exerciseName, setExerciseName] = useState('');
+  const [exerciseSets, setExerciseSets] = useState('');
+  const [exerciseReps, setExerciseReps] = useState('');
+  const [exerciseDuration, setExerciseDuration] = useState('');
+
+  // Load workouts from API
+  useEffect(() => {
+    loadWorkouts();
+  }, []);
+
+  const loadWorkouts = async () => {
+    try {
+      setLoading(true);
+      const fetchedWorkouts = await WorkoutApiService.getWorkouts();
+      setWorkouts(fetchedWorkouts);
+    } catch (error) {
+      console.error('Error loading workouts:', error);
+      Alert.alert('Error', 'Failed to load workouts');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Load weekly goals and sync workout completion status
   useEffect(() => {
     const loadWeeklyGoals = async () => {
       try {
         const goals = await ListItemApiService.getWeeklyGoals();
-
-        // Create a map of workout titles to their weekly goal IDs
         const goalMap: Record<string, string> = {};
         goals.forEach(goal => {
           goalMap[goal.text] = goal.id;
         });
         setWeeklyGoalIds(goalMap);
-
-        // Update workout completion status based on weekly goals
-        setWorkouts(prev =>
-          prev.map(workout => ({
-            ...workout,
-            completed: goals.some(goal => goal.text === workout.title && goal.completed)
-          }))
-        );
       } catch (error) {
         console.error('Error loading weekly goals:', error);
       }
@@ -166,12 +166,6 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
 
     loadWeeklyGoals();
   }, []);
-
-  // Calculate stats
-  const completedCount = workouts.filter(w => w.completed).length;
-  const totalCount = workouts.length;
-  const totalActiveTime = 50; // This would be calculated based on completed workouts
-  const totalCalories = 400; // This would be calculated based on completed workouts
 
   const toggleSection = (id: string) => {
     setExpandedSections(prev =>
@@ -181,40 +175,36 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
     );
   };
 
-  const toggleWorkoutCompletion = async (id: string) => {
-    const workout = workouts.find(w => w.id === id);
-    if (!workout) return;
+  const toggleWorkoutCompletion = async (workout: Workout) => {
+    if (!workout.id) return;
 
     const newCompletedStatus = !workout.completed;
 
     // Optimistically update UI
     setWorkouts(prev =>
       prev.map(w =>
-        w.id === id
+        w.id === workout.id
           ? { ...w, completed: newCompletedStatus }
           : w
       )
     );
 
-    // If this workout has a corresponding weekly goal, update it
-    const weeklyGoalId = weeklyGoalIds[workout.title];
-    if (weeklyGoalId) {
-      try {
+    try {
+      await WorkoutApiService.updateWorkout(workout.id, {
+        completed: newCompletedStatus,
+      });
+
+      // If this workout has a corresponding weekly goal, update it
+      const weeklyGoalId = weeklyGoalIds[workout.title];
+      if (weeklyGoalId) {
         await ListItemApiService.updateListItem(weeklyGoalId, {
           completed: newCompletedStatus,
         });
-      } catch (error) {
-        console.error('Error updating weekly goal:', error);
-        // Revert on error
-        setWorkouts(prev =>
-          prev.map(w =>
-            w.id === id
-              ? { ...w, completed: workout.completed }
-              : w
-          )
-        );
-        Alert.alert('Error', 'Failed to update workout status. Please try again.');
       }
+    } catch (error) {
+      console.error('Error updating workout status:', error);
+      Alert.alert('Error', 'Failed to update workout status');
+      loadWorkouts(); // Revert changes
     }
   };
 
@@ -222,21 +212,21 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
     setShowScheduleModal(true);
   };
 
-  const handleScheduleWorkout = (workout: WorkoutSection) => {
+  const handleScheduleWorkout = (workout: Workout) => {
     setShowScheduleModal(false);
 
-    // Create description from exercises
-    const description = workout.exercises.map((exercise) => {
-      if (exercise.sets && exercise.reps) {
-        return `${exercise.name}: ${exercise.sets} sets × ${exercise.reps} reps`;
-      } else if (exercise.duration) {
-        return `${exercise.name}: ${exercise.duration}`;
-      } else {
-        return exercise.name;
-      }
-    }).join('\n');
+    const description = workout.sections.flatMap(section =>
+      section.exercises.map((exercise) => {
+        if (exercise.sets && exercise.reps) {
+          return `${exercise.name}: ${exercise.sets} sets × ${exercise.reps} reps`;
+        } else if (exercise.duration) {
+          return `${exercise.name}: ${exercise.duration}`;
+        } else {
+          return exercise.name;
+        }
+      })
+    ).join('\n');
 
-    // Navigate to calendar with workout data
     if (onNavigateToCalendar) {
       onNavigateToCalendar({
         title: workout.title,
@@ -244,6 +234,235 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
       });
     }
   };
+
+  // CRUD handlers for workouts
+  const handleAddWorkout = async () => {
+    if (!workoutTitle.trim()) {
+      Alert.alert('Error', 'Please enter a workout title');
+      return;
+    }
+
+    try {
+      await WorkoutApiService.createWorkout({
+        title: workoutTitle,
+        description: workoutDescription,
+        sections: [],
+      });
+      setShowAddWorkoutModal(false);
+      setWorkoutTitle('');
+      setWorkoutDescription('');
+      loadWorkouts();
+    } catch (error) {
+      console.error('Error creating workout:', error);
+      Alert.alert('Error', 'Failed to create workout');
+    }
+  };
+
+  const handleEditWorkout = async () => {
+    if (!currentWorkout?.id || !workoutTitle.trim()) {
+      Alert.alert('Error', 'Please enter a workout title');
+      return;
+    }
+
+    try {
+      await WorkoutApiService.updateWorkout(currentWorkout.id, {
+        title: workoutTitle,
+        description: workoutDescription,
+      });
+      setShowEditWorkoutModal(false);
+      setCurrentWorkout(null);
+      setWorkoutTitle('');
+      setWorkoutDescription('');
+      loadWorkouts();
+    } catch (error) {
+      console.error('Error updating workout:', error);
+      Alert.alert('Error', 'Failed to update workout');
+    }
+  };
+
+  const handleDeleteWorkout = async (workoutId: string) => {
+    Alert.alert(
+      'Delete Workout',
+      'Are you sure you want to delete this workout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await WorkoutApiService.deleteWorkout(workoutId);
+              loadWorkouts();
+            } catch (error) {
+              console.error('Error deleting workout:', error);
+              Alert.alert('Error', 'Failed to delete workout');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // CRUD handlers for sections
+  const handleAddSection = async () => {
+    if (!currentWorkout?.id || !sectionTitle.trim()) {
+      Alert.alert('Error', 'Please enter a section title');
+      return;
+    }
+
+    try {
+      const maxOrder = Math.max(0, ...currentWorkout.sections.map(s => s.order));
+      await WorkoutApiService.createSection(currentWorkout.id, {
+        title: sectionTitle,
+        order: maxOrder + 1,
+        exercises: [],
+      });
+      setShowAddSectionModal(false);
+      setSectionTitle('');
+      setCurrentWorkout(null);
+      loadWorkouts();
+    } catch (error) {
+      console.error('Error creating section:', error);
+      Alert.alert('Error', 'Failed to create section');
+    }
+  };
+
+  const handleEditSection = async () => {
+    if (!currentSection?.id || !sectionTitle.trim()) {
+      Alert.alert('Error', 'Please enter a section title');
+      return;
+    }
+
+    try {
+      await WorkoutApiService.updateSection(currentSection.id, {
+        title: sectionTitle,
+      });
+      setShowEditSectionModal(false);
+      setCurrentSection(null);
+      setSectionTitle('');
+      loadWorkouts();
+    } catch (error) {
+      console.error('Error updating section:', error);
+      Alert.alert('Error', 'Failed to update section');
+    }
+  };
+
+  const handleDeleteSection = async (sectionId: string) => {
+    Alert.alert(
+      'Delete Section',
+      'Are you sure you want to delete this section?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await WorkoutApiService.deleteSection(sectionId);
+              loadWorkouts();
+            } catch (error) {
+              console.error('Error deleting section:', error);
+              Alert.alert('Error', 'Failed to delete section');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // CRUD handlers for exercises
+  const handleAddExercise = async () => {
+    if (!currentSection?.id || !exerciseName.trim()) {
+      Alert.alert('Error', 'Please enter an exercise name');
+      return;
+    }
+
+    try {
+      const maxOrder = Math.max(0, ...currentSection.exercises.map(e => e.order));
+      await WorkoutApiService.createExercise(currentSection.id, {
+        name: exerciseName,
+        sets: exerciseSets,
+        reps: exerciseReps,
+        duration: exerciseDuration,
+        order: maxOrder + 1,
+      });
+      setShowAddExerciseModal(false);
+      setCurrentSection(null);
+      setExerciseName('');
+      setExerciseSets('');
+      setExerciseReps('');
+      setExerciseDuration('');
+      loadWorkouts();
+    } catch (error) {
+      console.error('Error creating exercise:', error);
+      Alert.alert('Error', 'Failed to create exercise');
+    }
+  };
+
+  const handleEditExercise = async () => {
+    if (!currentExercise?.id || !exerciseName.trim()) {
+      Alert.alert('Error', 'Please enter an exercise name');
+      return;
+    }
+
+    try {
+      await WorkoutApiService.updateExercise(currentExercise.id, {
+        name: exerciseName,
+        sets: exerciseSets,
+        reps: exerciseReps,
+        duration: exerciseDuration,
+      });
+      setShowEditExerciseModal(false);
+      setCurrentExercise(null);
+      setExerciseName('');
+      setExerciseSets('');
+      setExerciseReps('');
+      setExerciseDuration('');
+      loadWorkouts();
+    } catch (error) {
+      console.error('Error updating exercise:', error);
+      Alert.alert('Error', 'Failed to update exercise');
+    }
+  };
+
+  const handleDeleteExercise = async (exerciseId: string) => {
+    Alert.alert(
+      'Delete Exercise',
+      'Are you sure you want to delete this exercise?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await WorkoutApiService.deleteExercise(exerciseId);
+              loadWorkouts();
+            } catch (error) {
+              console.error('Error deleting exercise:', error);
+              Alert.alert('Error', 'Failed to delete exercise');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Calculate stats
+  const completedCount = workouts.filter(w => w.completed).length;
+  const totalCount = workouts.length;
+  const totalActiveTime = 50; // This would be calculated based on completed workouts
+  const totalCalories = 400; // This would be calculated based on completed workouts
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading workouts...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -296,13 +515,24 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
             </View>
           </ImageBackground>
 
+          {/* Add Workout Button */}
+          <TouchableOpacity
+            style={styles.addWorkoutButton}
+            onPress={() => setShowAddWorkoutModal(true)}
+          >
+            <Text style={styles.addWorkoutButtonText}>+</Text>
+          </TouchableOpacity>
+
           {/* Workout Sections */}
           {workouts.map((workout) => {
-            const isExpanded = expandedSections.includes(workout.id);
+            const isExpanded = expandedSections.includes(workout.id!);
+            const isCompleted = workout.completed;
+
             return (
               <View key={workout.id} style={styles.workoutSection}>
+                {/* Workout Header */}
                 <TouchableOpacity
-                  onPress={() => toggleSection(workout.id)}
+                  onPress={() => toggleSection(workout.id!)}
                   activeOpacity={0.8}
                 >
                   <ImageBackground
@@ -313,17 +543,14 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
                     {/* Checkbox */}
                     <TouchableOpacity
                       style={styles.checkboxContainer}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        toggleWorkoutCompletion(workout.id);
-                      }}
+                      onPress={() => toggleWorkoutCompletion(workout)}
                     >
                       <ImageBackground
                         source={require('../../assets/to_do.png')}
                         style={styles.checkbox}
                         resizeMode="contain"
                       >
-                        {workout.completed && (
+                        {isCompleted && (
                           <Image
                             source={require('../../assets/check.png')}
                             style={styles.checkmark}
@@ -334,7 +561,9 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
                     </TouchableOpacity>
 
                     {/* Title */}
-                    <Text style={styles.workoutTitle}>{workout.title}</Text>
+                    <Text style={styles.workoutTitle}>
+                      {workout.title}
+                    </Text>
 
                     {/* Arrow */}
                     <Image
@@ -350,16 +579,118 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
 
                 {/* Expanded Content */}
                 {isExpanded && (
-                  <View style={styles.exerciseList}>
-                    {workout.exercises.map((exercise, index) => (
-                      <View key={index} style={styles.exerciseItem}>
-                        <Text style={styles.exerciseName}>{exercise.name}</Text>
-                        <Text style={styles.exerciseDetails}>
-                          {exercise.sets && `${exercise.sets} sets`}
-                          {exercise.sets && exercise.reps && ' × '}
-                          {exercise.reps && `${exercise.reps} reps`}
-                          {exercise.duration && exercise.duration}
-                        </Text>
+                  <View style={styles.expandedContent}>
+                    <Text style={styles.activitiesHeader}>Activities</Text>
+
+                    <TouchableOpacity
+                      style={styles.addSectionButton}
+                      onPress={() => {
+                        setCurrentWorkout(workout);
+                        setShowAddSectionModal(true);
+                      }}
+                    >
+                      <Text style={styles.addSectionButtonText}>+</Text>
+                    </TouchableOpacity>
+
+                    {/* Workout Edit Controls */}
+                    <View style={styles.workoutEditBar}>
+                      <View style={styles.workoutControls}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setCurrentWorkout(workout);
+                            setWorkoutTitle(workout.title);
+                            setWorkoutDescription(workout.description || '');
+                            setShowEditWorkoutModal(true);
+                          }}
+                          style={styles.editIconButton}
+                        >
+                          <EditIcon size={24} color="#4D5AEE" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleDeleteWorkout(workout.id!)}
+                          style={styles.deleteIconButton}
+                        >
+                          <TrashIcon size={24} color="#FF3B30" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Conditional Separator */}
+                    {workout.sections.length > 0 && <View style={styles.separatorLine} />}
+
+                    {/* Sections */}
+                    {workout.sections.map((section) => (
+                      <View key={section.id} style={styles.sectionContainer}>
+                        <View style={styles.sectionHeader}>
+                          <Text style={styles.sectionTitle}>{section.title}</Text>
+                          <View style={styles.sectionControls}>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setCurrentSection(section);
+                                setSectionTitle(section.title);
+                                setShowEditSectionModal(true);
+                              }}
+                              style={styles.editIconButton}
+                            >
+                              <EditIcon size={20} color="#4D5AEE" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleDeleteSection(section.id!)}
+                              style={styles.deleteIconButton}
+                            >
+                              <TrashIcon size={20} color="#FF3B30" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+
+                        {/* Add Exercise Button */}
+                        <TouchableOpacity
+                          style={styles.addExerciseButton}
+                          onPress={() => {
+                            setCurrentSection(section);
+                            setShowAddExerciseModal(true);
+                          }}
+                        >
+                          <Text style={styles.addExerciseButtonText}>+ Add Exercise</Text>
+                        </TouchableOpacity>
+
+                        {/* Exercises */}
+                        <View style={styles.exerciseList}>
+                          {section.exercises.map((exercise) => (
+                            <View key={exercise.id} style={styles.exerciseItem}>
+                              <View style={styles.exerciseContent}>
+                                <Text style={styles.exerciseName}>{exercise.name}</Text>
+                                <Text style={styles.exerciseDetails}>
+                                  {exercise.sets && `${exercise.sets} sets`}
+                                  {exercise.sets && exercise.reps && ' × '}
+                                  {exercise.reps && `${exercise.reps} reps`}
+                                  {exercise.duration && exercise.duration}
+                                </Text>
+                              </View>
+                              <View style={styles.exerciseControls}>
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    setCurrentExercise(exercise);
+                                    setExerciseName(exercise.name);
+                                    setExerciseSets(exercise.sets || '');
+                                    setExerciseReps(exercise.reps || '');
+                                    setExerciseDuration(exercise.duration || '');
+                                    setShowEditExerciseModal(true);
+                                  }}
+                                  style={styles.editIconButton}
+                                >
+                                  <EditIcon size={18} color="#4D5AEE" />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() => handleDeleteExercise(exercise.id!)}
+                                  style={styles.deleteIconButton}
+                                >
+                                  <TrashIcon size={18} color="#FF3B30" />
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -390,7 +721,6 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
           onPress={() => setShowScheduleModal(false)}
         >
           <Pressable style={styles.modalContent}>
-            {/* AI Button in top right corner */}
             <TouchableOpacity style={styles.aiButton} onPress={() => Alert.alert('AI Feature', 'AI workout scheduling coming soon!')}>
               <LinearGradient
                 colors={['#FF9D00', '#4D5AEE']}
@@ -422,7 +752,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
                   <View style={styles.modalWorkoutTextContainer}>
                     <Text style={styles.modalWorkoutText}>{workout.title}</Text>
                     <Text style={styles.modalWorkoutDetails}>
-                      {workout.exercises.length} exercises
+                      {workout.sections.reduce((acc, s) => acc + s.exercises.length, 0)} exercises
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -435,6 +765,181 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
             >
               <Text style={styles.modalCloseText}>Cancel</Text>
             </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Add/Edit Workout Modals */}
+      <Modal
+        visible={showAddWorkoutModal || showEditWorkoutModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowAddWorkoutModal(false);
+          setShowEditWorkoutModal(false);
+        }}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => {
+          setShowAddWorkoutModal(false);
+          setShowEditWorkoutModal(false);
+        }}>
+          <Pressable style={styles.formModalContent}>
+            <Text style={styles.formModalTitle}>
+              {showAddWorkoutModal ? 'Add Workout' : 'Edit Workout'}
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Workout Title"
+              placeholderTextColor="#999"
+              value={workoutTitle}
+              onChangeText={setWorkoutTitle}
+            />
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Description (optional)"
+              placeholderTextColor="#999"
+              value={workoutDescription}
+              onChangeText={setWorkoutDescription}
+              multiline
+              numberOfLines={3}
+            />
+            <View style={styles.formButtons}>
+              <TouchableOpacity
+                style={[styles.formButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowAddWorkoutModal(false);
+                  setShowEditWorkoutModal(false);
+                  setWorkoutTitle('');
+                  setWorkoutDescription('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.formButton, styles.saveButton]}
+                onPress={showAddWorkoutModal ? handleAddWorkout : handleEditWorkout}
+              >
+                <Text style={styles.saveButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Add/Edit Section Modals */}
+      <Modal
+        visible={showAddSectionModal || showEditSectionModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowAddSectionModal(false);
+          setShowEditSectionModal(false);
+        }}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => {
+          setShowAddSectionModal(false);
+          setShowEditSectionModal(false);
+        }}>
+          <Pressable style={styles.formModalContent}>
+            <Text style={styles.formModalTitle}>
+              {showAddSectionModal ? 'Add Section' : 'Edit Section'}
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Section Title"
+              placeholderTextColor="#999"
+              value={sectionTitle}
+              onChangeText={setSectionTitle}
+            />
+            <View style={styles.formButtons}>
+              <TouchableOpacity
+                style={[styles.formButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowAddSectionModal(false);
+                  setShowEditSectionModal(false);
+                  setSectionTitle('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.formButton, styles.saveButton]}
+                onPress={showAddSectionModal ? handleAddSection : handleEditSection}
+              >
+                <Text style={styles.saveButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Add/Edit Exercise Modals */}
+      <Modal
+        visible={showAddExerciseModal || showEditExerciseModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowAddExerciseModal(false);
+          setShowEditExerciseModal(false);
+        }}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => {
+          setShowAddExerciseModal(false);
+          setShowEditExerciseModal(false);
+        }}>
+          <Pressable style={styles.formModalContent}>
+            <Text style={styles.formModalTitle}>
+              {showAddExerciseModal ? 'Add Exercise' : 'Edit Exercise'}
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Exercise Name"
+              placeholderTextColor="#999"
+              value={exerciseName}
+              onChangeText={setExerciseName}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Sets (optional)"
+              placeholderTextColor="#999"
+              value={exerciseSets}
+              onChangeText={setExerciseSets}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Reps (optional)"
+              placeholderTextColor="#999"
+              value={exerciseReps}
+              onChangeText={setExerciseReps}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Duration (optional)"
+              placeholderTextColor="#999"
+              value={exerciseDuration}
+              onChangeText={setExerciseDuration}
+            />
+            <View style={styles.formButtons}>
+              <TouchableOpacity
+                style={[styles.formButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowAddExerciseModal(false);
+                  setShowEditExerciseModal(false);
+                  setExerciseName('');
+                  setExerciseSets('');
+                  setExerciseReps('');
+                  setExerciseDuration('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.formButton, styles.saveButton]}
+                onPress={showAddExerciseModal ? handleAddExercise : handleEditExercise}
+              >
+                <Text style={styles.saveButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -454,9 +959,21 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 100,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+  },
   header: {
     width: '100%',
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
     marginBottom: 10,
   },
   settingsButtonWrapper: {
@@ -478,7 +995,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    marginTop: 40,  
+    marginTop: 40,
     fontSize: 28,
     fontFamily: 'Margarine',
     color: '#FF9D00',
@@ -525,6 +1042,28 @@ const styles = StyleSheet.create({
   caloriesContainer: {
     alignItems: 'center',
   },
+  addWorkoutButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#FF9D00',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginTop: 16,
+    marginBottom: 16,
+    shadowColor: '#FF9D00',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  addWorkoutButtonText: {
+    color: '#FFF',
+    fontSize: 32,
+    fontFamily: 'Margarine',
+    marginTop: -4,
+  },
   workoutSection: {
     marginBottom: 12,
   },
@@ -561,18 +1100,114 @@ const styles = StyleSheet.create({
   arrowExpanded: {
     transform: [{ rotate: '180deg' }],
   },
-  exerciseList: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+  editIconButton: {
+    padding: 4,
+  },
+  deleteIconButton: {
+    padding: 4,
+  },
+  editIcon: {
+    fontSize: 20,
+  },
+  deleteIcon: {
+    fontSize: 20,
+  },
+  editIconSmall: {
+    fontSize: 16,
+  },
+  deleteIconSmall: {
+    fontSize: 16,
+  },
+  expandedContent: {
     backgroundColor: 'transparent',
-    marginTop: -5,
     borderBottomLeftRadius: 12,
     borderBottomRightRadius: 12,
+    marginTop: -5,
+    padding: 16,
+  },
+  workoutEditBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 12,
+  },
+  activitiesHeader: {
+    fontSize: 20,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  separatorLine: {
+    height: 1,
+    backgroundColor: '#FF9D00',
+    marginBottom: 16,
+  },
+  workoutControls: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  addSectionButton: {
+    backgroundColor: '#4D5AEE',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    alignSelf: 'center',
+  },
+  addSectionButtonText: {
+    color: '#FFF',
+    fontSize: 24,
+    fontFamily: 'Margarine',
+    marginTop: -2, // Visual centering
+  },
+  sectionContainer: {
+    marginBottom: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+  },
+  sectionControls: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  addExerciseButton: {
+    backgroundColor: '#4D5AEE',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  addExerciseButtonText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontFamily: 'Margarine',
+  },
+  exerciseList: {
+    gap: 8,
   },
   exerciseItem: {
-    paddingVertical: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#FF9D00',
+  },
+  exerciseContent: {
+    flex: 1,
   },
   exerciseName: {
     fontSize: 16,
@@ -585,7 +1220,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     color: '#666',
   },
-  
+  exerciseControls: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   scheduleButton: {
     backgroundColor: '#4D5AEE',
     paddingVertical: 10,
@@ -704,5 +1342,63 @@ const styles = StyleSheet.create({
   aiIcon: {
     width: 24,
     height: 24,
+  },
+  formModalContent: {
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 24,
+    width: '85%',
+    maxHeight: '80%',
+  },
+  formModalTitle: {
+    fontSize: 24,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  input: {
+    backgroundColor: '#F7E8FF',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#4D5AEE',
+  },
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  formButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 12,
+  },
+  formButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#FF3B30',
+  },
+  saveButton: {
+    backgroundColor: '#4D5AEE',
+  },
+  cancelButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  saveButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
   },
 });

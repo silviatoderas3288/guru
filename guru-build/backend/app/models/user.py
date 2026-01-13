@@ -28,6 +28,7 @@ class User(BaseModel):
 
     # Phase 1: Scheduling Agent Relationships
     workout_preferences = relationship("WorkoutPreference", back_populates="user", cascade="all, delete-orphan")
+    workouts = relationship("Workout", back_populates="user", cascade="all, delete-orphan")
     meal_preferences = relationship("MealPreference", back_populates="user", cascade="all, delete-orphan")
     commute_preferences = relationship("CommutePreference", back_populates="user", cascade="all, delete-orphan")
     schedule_suggestions = relationship("ScheduleSuggestion", back_populates="user", cascade="all, delete-orphan")
