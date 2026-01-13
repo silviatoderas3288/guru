@@ -8,6 +8,10 @@ from .bingo_item import BingoItem
 from .media_preference import MediaPreference
 from .media_feedback import MediaFeedback
 from .user_preference import UserPreference
+from .workout_preference import WorkoutPreference
+from .meal_preference import MealPreference
+from .commute_preference import CommutePreference
+from .schedule_agent import ScheduleSuggestion, TaskCompletionFeedback, ScheduleHistory
 
 __all__ = [
     "User",
@@ -18,4 +22,10 @@ __all__ = [
     "MediaPreference",
     "MediaFeedback",
     "UserPreference",
+    "WorkoutPreference",
+    "MealPreference",
+    "CommutePreference",
+    "ScheduleSuggestion",
+    "TaskCompletionFeedback",
+    "ScheduleHistory",
 ]

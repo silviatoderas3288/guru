@@ -23,6 +23,12 @@ class UserPreference(BaseModel):
     workout_duration = Column(String)  # Single selection
     workout_frequency = Column(String)  # Single selection
 
+    # Focus & Schedule preferences
+    bed_time = Column(String, nullable=True)  # "HH:MM"
+    focus_time_start = Column(String, nullable=True)  # "HH:MM"
+    focus_time_end = Column(String, nullable=True)  # "HH:MM"
+    blocked_apps = Column(ARRAY(String), nullable=True)  # List of app names
+
     # Relationship
     user = relationship("User", back_populates="user_preferences")
 

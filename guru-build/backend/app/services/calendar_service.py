@@ -149,6 +149,12 @@ class CalendarService:
             Created event dictionary
         """
         try:
+            # Validate that start_time is before end_time
+            if start_time >= end_time:
+                raise ValueError(f"Start time ({start_time}) must be before end time ({end_time})")
+
+            logger.info(f"Creating event '{summary}' from {start_time.isoformat()} to {end_time.isoformat()}")
+
             event = {
                 'summary': summary,
                 'start': {
@@ -168,16 +174,22 @@ class CalendarService:
             if color_id:
                 event['colorId'] = color_id
 
+            logger.info(f"Event payload: {event}")
+
             created_event = self.service.events().insert(
                 calendarId=calendar_id,
                 body=event
             ).execute()
 
-            logger.info(f"Created event: {summary} at {start_time}")
+            logger.info(f"Successfully created event: {summary} at {start_time}")
             return created_event
 
         except HttpError as error:
-            logger.error(f"Error creating event: {error}")
+            logger.error(f"HttpError creating event: {error}")
+            logger.error(f"Event details - summary: '{summary}', start: {start_time}, end: {end_time}")
+            raise
+        except ValueError as error:
+            logger.error(f"ValueError: {error}")
             raise
 
     def update_event(

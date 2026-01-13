@@ -19,6 +19,10 @@ class PreferenceSchema(BaseModel):
     workout_types: Optional[List[str]] = None
     workout_duration: Optional[str] = None
     workout_frequency: Optional[str] = None
+    bed_time: Optional[str] = None
+    focus_time_start: Optional[str] = None
+    focus_time_end: Optional[str] = None
+    blocked_apps: Optional[List[str]] = None
 
 
 class PreferenceResponse(BaseModel):
@@ -29,6 +33,10 @@ class PreferenceResponse(BaseModel):
     workout_types: Optional[List[str]] = None
     workout_duration: Optional[str] = None
     workout_frequency: Optional[str] = None
+    bed_time: Optional[str] = None
+    focus_time_start: Optional[str] = None
+    focus_time_end: Optional[str] = None
+    blocked_apps: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
@@ -55,7 +63,11 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
             notifications=None,
             workout_types=[],
             workout_duration=None,
-            workout_frequency=None
+            workout_frequency=None,
+            bed_time=None,
+            focus_time_start=None,
+            focus_time_end=None,
+            blocked_apps=[]
         )
 
     return PreferenceResponse(
@@ -64,7 +76,11 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
         notifications=preferences.notifications,
         workout_types=preferences.workout_types or [],
         workout_duration=preferences.workout_duration,
-        workout_frequency=preferences.workout_frequency
+        workout_frequency=preferences.workout_frequency,
+        bed_time=preferences.bed_time,
+        focus_time_start=preferences.focus_time_start,
+        focus_time_end=preferences.focus_time_end,
+        blocked_apps=preferences.blocked_apps or []
     )
 
 
@@ -92,6 +108,10 @@ async def save_preferences(
         preferences.workout_types = preference_data.workout_types
         preferences.workout_duration = preference_data.workout_duration
         preferences.workout_frequency = preference_data.workout_frequency
+        preferences.bed_time = preference_data.bed_time
+        preferences.focus_time_start = preference_data.focus_time_start
+        preferences.focus_time_end = preference_data.focus_time_end
+        preferences.blocked_apps = preference_data.blocked_apps
     else:
         # Create new preferences
         preferences = UserPreference(
@@ -101,7 +121,11 @@ async def save_preferences(
             notifications=preference_data.notifications,
             workout_types=preference_data.workout_types,
             workout_duration=preference_data.workout_duration,
-            workout_frequency=preference_data.workout_frequency
+            workout_frequency=preference_data.workout_frequency,
+            bed_time=preference_data.bed_time,
+            focus_time_start=preference_data.focus_time_start,
+            focus_time_end=preference_data.focus_time_end,
+            blocked_apps=preference_data.blocked_apps
         )
         db.add(preferences)
 
@@ -116,6 +140,10 @@ async def save_preferences(
             notifications=preferences.notifications,
             workout_types=preferences.workout_types or [],
             workout_duration=preferences.workout_duration,
-            workout_frequency=preferences.workout_frequency
+            workout_frequency=preferences.workout_frequency,
+            bed_time=preferences.bed_time,
+            focus_time_start=preferences.focus_time_start,
+            focus_time_end=preferences.focus_time_end,
+            blocked_apps=preferences.blocked_apps or []
         )
     }

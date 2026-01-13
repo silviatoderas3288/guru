@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert, Modal, Pressable, ImageBackground } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
@@ -27,7 +27,289 @@ interface UserPreferences {
   workoutTypes: string[];
   workoutDuration: string[];
   workoutFrequency: string[];
+  bedTime: string[];
+  focusTimeStart: string[];
+  focusTimeEnd: string[];
+  blockedApps: string[];
 }
+
+// Focus Time Dropdown Component
+interface FocusTimeDropdownProps {
+  startTime: string;
+  endTime: string;
+  onStartTimeChange: (time: string) => void;
+  onEndTimeChange: (time: string) => void;
+}
+
+const FocusTimeDropdown: React.FC<FocusTimeDropdownProps> = ({
+  startTime,
+  endTime,
+  onStartTimeChange,
+  onEndTimeChange,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [tempStartTime, setTempStartTime] = useState('');
+  const [tempEndTime, setTempEndTime] = useState('');
+
+  const startTimeOptions = ['08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM'];
+  const endTimeOptions = ['11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM'];
+
+  const handleOpen = () => {
+    setTempStartTime(startTime);
+    setTempEndTime(endTime);
+    setIsOpen(true);
+  };
+
+  const handleDone = () => {
+    if (tempStartTime) onStartTimeChange(tempStartTime);
+    if (tempEndTime) onEndTimeChange(tempEndTime);
+    setIsOpen(false);
+  };
+
+  const handleCancel = () => {
+    setTempStartTime(startTime);
+    setTempEndTime(endTime);
+    setIsOpen(false);
+  };
+
+  const displayValue = startTime && endTime
+    ? `${startTime} - ${endTime}`
+    : 'Select focus time';
+
+  return (
+    <View style={focusTimeStyles.container}>
+      {/* Label with underline */}
+      <View style={focusTimeStyles.labelContainer}>
+        <Text style={focusTimeStyles.label}>Focus Time</Text>
+        <Image
+          source={require('../../assets/under_pref.png')}
+          style={focusTimeStyles.underline}
+          resizeMode="contain"
+        />
+      </View>
+
+      {/* Dropdown Box */}
+      <TouchableOpacity onPress={handleOpen}>
+        <ImageBackground
+          source={require('../../assets/box.png')}
+          style={focusTimeStyles.dropdownBox}
+          resizeMode="stretch"
+        >
+          <Text style={focusTimeStyles.selectedText} numberOfLines={1}>
+            {displayValue}
+          </Text>
+          <Image
+            source={require('../../assets/arrow.png')}
+            style={[
+              focusTimeStyles.arrow,
+              isOpen && focusTimeStyles.arrowRotated
+            ]}
+            resizeMode="contain"
+          />
+        </ImageBackground>
+      </TouchableOpacity>
+
+      {/* Modal with two-column layout for start/end times */}
+      <Modal
+        visible={isOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCancel}
+      >
+        <Pressable
+          style={focusTimeStyles.modalOverlay}
+          onPress={handleCancel}
+        >
+          <Pressable style={focusTimeStyles.modalContent}>
+            <ScrollView style={focusTimeStyles.optionsList}>
+              <View style={focusTimeStyles.twoColumnContainer}>
+                {/* Start Time Column */}
+                <View style={focusTimeStyles.column}>
+                  <Text style={focusTimeStyles.columnHeader}>Start Time</Text>
+                  {startTimeOptions.map((time) => {
+                    const isSelected = tempStartTime === time;
+                    return (
+                      <TouchableOpacity
+                        key={time}
+                        style={[
+                          focusTimeStyles.optionItem,
+                          isSelected && focusTimeStyles.optionItemSelected
+                        ]}
+                        onPress={() => setTempStartTime(time)}
+                      >
+                        <Text style={[
+                          focusTimeStyles.optionText,
+                          isSelected && focusTimeStyles.optionTextSelected
+                        ]}>
+                          {time}
+                        </Text>
+                        {isSelected && (
+                          <Text style={focusTimeStyles.checkmark}>✓</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* End Time Column */}
+                <View style={focusTimeStyles.column}>
+                  <Text style={focusTimeStyles.columnHeader}>End Time</Text>
+                  {endTimeOptions.map((time) => {
+                    const isSelected = tempEndTime === time;
+                    return (
+                      <TouchableOpacity
+                        key={time}
+                        style={[
+                          focusTimeStyles.optionItem,
+                          isSelected && focusTimeStyles.optionItemSelected
+                        ]}
+                        onPress={() => setTempEndTime(time)}
+                      >
+                        <Text style={[
+                          focusTimeStyles.optionText,
+                          isSelected && focusTimeStyles.optionTextSelected
+                        ]}>
+                          {time}
+                        </Text>
+                        {isSelected && (
+                          <Text style={focusTimeStyles.checkmark}>✓</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={focusTimeStyles.doneButton}
+              onPress={handleDone}
+            >
+              <Text style={focusTimeStyles.doneButtonText}>Done</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+};
+
+const focusTimeStyles = StyleSheet.create({
+  container: {
+    marginBottom: 20,
+  },
+  labelContainer: {
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 4,
+  },
+  underline: {
+    width: 150,
+    height: 15,
+  },
+  dropdownBox: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+  },
+  selectedText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    marginRight: 10,
+  },
+  arrow: {
+    width: 20,
+    height: 20,
+  },
+  arrowRotated: {
+    transform: [{ rotate: '180deg' }],
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'rgba(77, 90, 238, 0.70)',
+    borderRadius: 20,
+    padding: 20,
+    width: '85%',
+    maxHeight: '70%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  optionsList: {
+    maxHeight: 400,
+  },
+  twoColumnContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  column: {
+    flex: 1,
+    paddingHorizontal: 5,
+  },
+  columnHeader: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    fontWeight: '700',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  optionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  optionItemSelected: {
+    backgroundColor: 'transparent',
+  },
+  optionText: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#FFF',
+  },
+  optionTextSelected: {
+    color: '#FF9D00',
+    fontWeight: '600',
+  },
+  checkmark: {
+    fontSize: 18,
+    color: '#FF9D00',
+    fontWeight: 'bold',
+  },
+  doneButton: {
+    backgroundColor: '#FF9D00',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  doneButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+});
 
 export const PageFive: React.FC = () => {
   const [user, setUser] = useState<GoogleUser | null>(null);
@@ -38,6 +320,10 @@ export const PageFive: React.FC = () => {
     workoutTypes: [],
     workoutDuration: [],
     workoutFrequency: [],
+    bedTime: [],
+    focusTimeStart: [],
+    focusTimeEnd: [],
+    blockedApps: [],
   });
   const [loading, setLoading] = useState(true);
 
@@ -74,6 +360,10 @@ export const PageFive: React.FC = () => {
           workoutTypes: data.workout_types || [],
           workoutDuration: data.workout_duration ? [data.workout_duration] : [],
           workoutFrequency: data.workout_frequency ? [data.workout_frequency] : [],
+          bedTime: data.bed_time ? [data.bed_time] : [],
+          focusTimeStart: data.focus_time_start ? [data.focus_time_start] : [],
+          focusTimeEnd: data.focus_time_end ? [data.focus_time_end] : [],
+          blockedApps: data.blocked_apps || [],
         });
       }
     } catch (error) {
@@ -104,6 +394,10 @@ export const PageFive: React.FC = () => {
           workout_types: updatedPreferences.workoutTypes,
           workout_duration: updatedPreferences.workoutDuration[0] || null,
           workout_frequency: updatedPreferences.workoutFrequency[0] || null,
+          bed_time: updatedPreferences.bedTime[0] || null,
+          focus_time_start: updatedPreferences.focusTimeStart[0] || null,
+          focus_time_end: updatedPreferences.focusTimeEnd[0] || null,
+          blocked_apps: updatedPreferences.blockedApps,
         }),
       });
 
@@ -284,6 +578,34 @@ export const PageFive: React.FC = () => {
           selectedOptions={preferences.workoutFrequency}
           onSelectionChange={(selected) => updatePreference('workoutFrequency', selected)}
           multiSelect={false}
+        />
+      </View>
+
+      {/* Focus & Schedule Preferences Section */}
+      <View style={styles.preferencesSection}>
+        <Text style={styles.sectionHeader}>Focus & Schedule</Text>
+
+        <PreferenceDropdown
+          label="Bed Time"
+          options={['09:00 PM', '09:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM', '12:30 AM']}
+          selectedOptions={preferences.bedTime}
+          onSelectionChange={(selected) => updatePreference('bedTime', selected)}
+          multiSelect={false}
+        />
+
+        <FocusTimeDropdown
+          startTime={preferences.focusTimeStart[0] || ''}
+          endTime={preferences.focusTimeEnd[0] || ''}
+          onStartTimeChange={(time) => updatePreference('focusTimeStart', [time])}
+          onEndTimeChange={(time) => updatePreference('focusTimeEnd', [time])}
+        />
+
+        <PreferenceDropdown
+          label="Blocked Apps"
+          options={['Instagram', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'Snapchat', 'Reddit', 'Netflix']}
+          selectedOptions={preferences.blockedApps}
+          onSelectionChange={(selected) => updatePreference('blockedApps', selected)}
+          multiSelect={true}
         />
       </View>
 

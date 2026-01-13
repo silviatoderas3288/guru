@@ -224,18 +224,25 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
   const [eventEndTime, setEventEndTime] = useState('');
   const [eventLocation, setEventLocation] = useState('');
   const [eventReminder, setEventReminder] = useState('30 minutes before');
-  const [eventImportance, setEventImportance] = useState<'High' | 'Medium' | 'Low'>('High');
+  const [eventImportance, setEventImportance] = useState<'High' | 'Medium' | 'Low' | null>(null);
   const [eventDescription, setEventDescription] = useState('');
   const [eventGuests, setEventGuests] = useState('');
+  const [hasDeadline, setHasDeadline] = useState(false);
+  const [deadlineDate, setDeadlineDate] = useState('');
+  const [deadlineTime, setDeadlineTime] = useState('');
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   // Date/Time picker states
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+  const [showDeadlineDatePicker, setShowDeadlineDatePicker] = useState(false);
+  const [showDeadlineTimePicker, setShowDeadlineTimePicker] = useState(false);
   const [eventDateObj, setEventDateObj] = useState(new Date());
   const [eventStartTimeObj, setEventStartTimeObj] = useState(new Date());
   const [eventEndTimeObj, setEventEndTimeObj] = useState(new Date());
+  const [deadlineDateObj, setDeadlineDateObj] = useState(new Date());
+  const [deadlineTimeObj, setDeadlineTimeObj] = useState(new Date());
 
   // Check authentication on mount
   useEffect(() => {
@@ -280,15 +287,20 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           setEventStartTime(startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
           setEventEndTime(endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
           setEventLocation('');
-          setEventImportance('Low');
+          setEventImportance(null);
           setEventDescription(podcastScheduleData.description || '');
           setEventReminder('30 minutes before');
           setEventGuests('');
+          setHasDeadline(false);
+          setDeadlineDate('');
+          setDeadlineTime('');
 
           // Set Date objects for pickers
           setEventDateObj(now);
           setEventStartTimeObj(startTime);
           setEventEndTimeObj(endTime);
+          setDeadlineDateObj(new Date());
+          setDeadlineTimeObj(new Date());
 
           // Show the schedule popup
           setShowSchedulePopup(true);
@@ -350,15 +362,20 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           setEventStartTime(startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
           setEventEndTime(endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
           setEventLocation('');
-          setEventImportance('Medium');
+          setEventImportance(null);
           setEventDescription(workoutScheduleData.description || '');
           setEventReminder('30 minutes before');
           setEventGuests('');
+          setHasDeadline(false);
+          setDeadlineDate('');
+          setDeadlineTime('');
 
           // Set Date objects for pickers
           setEventDateObj(now);
           setEventStartTimeObj(startTime);
           setEventEndTimeObj(endTime);
+          setDeadlineDateObj(new Date());
+          setDeadlineTimeObj(new Date());
 
           // Show the schedule popup
           setShowSchedulePopup(true);
@@ -830,8 +847,11 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           } else if (existingEvent.color_id === '10') {
             setEventImportance('Low');
           } else {
-            setEventImportance('High');
+            setEventImportance(null);
           }
+
+          // Set hasDeadline based on whether event has an end time
+          setHasDeadline(!!existingEvent.end_time);
         }
       } catch (error) {
         console.error('Error loading event details:', error);
@@ -845,13 +865,18 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
         setEventStartTime(startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
         setEventEndTime(endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
         setEventLocation('');
-        setEventImportance('High');
+        setEventImportance(null);
         setEventDescription('');
+        setHasDeadline(false);
+        setDeadlineDate('');
+        setDeadlineTime('');
 
         // Set Date objects for pickers
         setEventDateObj(now);
         setEventStartTimeObj(startTime);
         setEventEndTimeObj(endTime);
+        setDeadlineDateObj(new Date());
+        setDeadlineTimeObj(new Date());
       }
     } else {
       // Set defaults for NEW event - current time + 1 hour
@@ -864,13 +889,18 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
       setEventStartTime(startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
       setEventEndTime(endTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
       setEventLocation('');
-      setEventImportance('High');
+      setEventImportance(null);
       setEventDescription('');
+      setHasDeadline(false);
+      setDeadlineDate('');
+      setDeadlineTime('');
 
       // Set Date objects for pickers
       setEventDateObj(now);
       setEventStartTimeObj(startTime);
       setEventEndTimeObj(endTime);
+      setDeadlineDateObj(new Date());
+      setDeadlineTimeObj(new Date());
     }
 
     setEventReminder('30 minutes before');
@@ -1198,9 +1228,52 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
     }
   };
 
+  const handleDeadlineDateChange = (event: any, date?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDeadlineDatePicker(false);
+    }
+    if (event.type === 'dismissed') {
+      setShowDeadlineDatePicker(false);
+      return;
+    }
+    if (date) {
+      setDeadlineDateObj(date);
+      setDeadlineDate(date.toISOString().split('T')[0]);
+    }
+  };
+
+  const handleDeadlineTimeChange = (event: any, time?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDeadlineTimePicker(false);
+    }
+    if (event.type === 'dismissed') {
+      setShowDeadlineTimePicker(false);
+      return;
+    }
+    if (time) {
+      setDeadlineTimeObj(time);
+      setDeadlineTime(time.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      }).toLowerCase().replace(' ', ''));
+      if (Platform.OS === 'android') {
+        setShowDeadlineTimePicker(false);
+      }
+    }
+  };
+
   const scheduleEventToCalendar = async () => {
-    if (!selectedGoalForSchedule || !isAuthenticated) {
+    // Check authentication first
+    if (!isAuthenticated) {
       Alert.alert('Error', 'Please sign in with Google Calendar to schedule events.');
+      return;
+    }
+
+    // When editing an existing event, we don't need selectedGoalForSchedule
+    // But when creating a new event from a goal/todo, we do need it
+    if (!editingEventId && !selectedGoalForSchedule) {
+      Alert.alert('Error', 'Please select a goal or todo item to schedule.');
       return;
     }
 
@@ -1231,12 +1304,26 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
       };
 
       const startTime = parseTime(eventStartTime, eventDate);
-      const endTime = parseTime(eventEndTime, eventDate);
+      let endTime = parseTime(eventEndTime, eventDate);
 
       if (!startTime || !endTime) {
         Alert.alert('Error', 'Please enter valid time format (e.g., 1:30pm)');
         return;
       }
+
+      // If end time is before or equal to start time, assume it's the next day
+      if (endTime <= startTime) {
+        endTime = new Date(endTime.getTime() + 24 * 60 * 60 * 1000); // Add 24 hours
+        console.log('End time adjusted to next day:', endTime.toISOString());
+      }
+
+      console.log('Event times:', {
+        eventDate,
+        eventStartTime,
+        eventEndTime,
+        startTimeISO: startTime.toISOString(),
+        endTimeISO: endTime.toISOString(),
+      });
 
       // Build description
       // User requested to NOT include Importance/Reminder in the text description
@@ -1249,7 +1336,7 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
         'Medium': '6',   // Orange
         'Low': '10',     // Green
       };
-      const colorId = colorMap[eventImportance];
+      const colorId = eventImportance ? colorMap[eventImportance] : undefined;
 
       let calendarEventId: string;
 
@@ -1277,31 +1364,35 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
         calendarEventId = newEvent.id!;
       }
 
-      // Save the calendar event ID to the list item and update text if changed
-      const updateData: any = {
-        calendar_event_id: calendarEventId,
-      };
-      
-      // If title changed, update the list item text as well
-      if (selectedGoalForSchedule.text !== eventTitle) {
-        updateData.text = eventTitle;
-      }
+      // Only update the list item if we have a selectedGoalForSchedule (creating from goal/todo)
+      // When editing an existing calendar event directly, there's no associated list item
+      if (selectedGoalForSchedule) {
+        // Save the calendar event ID to the list item and update text if changed
+        const updateData: any = {
+          calendar_event_id: calendarEventId,
+        };
 
-      await ListItemApiService.updateListItem(selectedGoalForSchedule.id, updateData);
+        // If title changed, update the list item text as well
+        if (selectedGoalForSchedule.text !== eventTitle) {
+          updateData.text = eventTitle;
+        }
 
-      // Update local state based on activeListType
-      if (activeListType === 'weekly') {
-        setWeeklyGoals(weeklyGoals.map(g =>
-          g.id === selectedGoalForSchedule.id 
-            ? { ...g, calendar_event_id: calendarEventId, text: eventTitle } 
-            : g
-        ));
-      } else {
-        setTodoItems(todoItems.map(i =>
-          i.id === selectedGoalForSchedule.id 
-            ? { ...i, calendar_event_id: calendarEventId, text: eventTitle } 
-            : i
-        ));
+        await ListItemApiService.updateListItem(selectedGoalForSchedule.id, updateData);
+
+        // Update local state based on activeListType
+        if (activeListType === 'weekly') {
+          setWeeklyGoals(weeklyGoals.map(g =>
+            g.id === selectedGoalForSchedule.id
+              ? { ...g, calendar_event_id: calendarEventId, text: eventTitle }
+              : g
+          ));
+        } else {
+          setTodoItems(todoItems.map(i =>
+            i.id === selectedGoalForSchedule.id
+              ? { ...i, calendar_event_id: calendarEventId, text: eventTitle }
+              : i
+          ));
+        }
       }
 
       // Close popup
@@ -1340,41 +1431,82 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
     'default': '#4285F4' // Blue
   };
 
+  const handleEventClick = (event: CalendarEvent) => {
+    const startDate = new Date(event.start_time);
+    const endDate = new Date(event.end_time);
+
+    // Pre-fill the form with event data
+    setEventTitle(event.summary || '');
+    setEventDate(startDate.toISOString().split('T')[0]);
+    setEventStartTime(startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
+    setEventEndTime(endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
+    setEventLocation(event.location || '');
+    setEventDescription(event.description || '');
+    setEventGuests(event.attendees?.map(a => a.email).join(', ') || '');
+
+    // Set date/time objects for pickers
+    setEventDateObj(startDate);
+    setEventStartTimeObj(startDate);
+    setEventEndTimeObj(endDate);
+
+    // Determine importance based on color_id
+    let importance: 'High' | 'Medium' | 'Low' | null = null;
+    if (event.color_id === '11') importance = 'High'; // Red
+    else if (event.color_id === '5') importance = 'Medium'; // Yellow
+    else if (event.color_id === '10') importance = 'Low'; // Green
+    setEventImportance(importance);
+
+    // Set editing mode
+    setEditingEventId(event.id || null);
+
+    // Determine which list type (weekly or todo) - default to weekly
+    setActiveListType('weekly');
+    setSelectedGoalForSchedule(null);
+
+    // Open the schedule popup
+    setShowSchedulePopup(true);
+  };
+
   const renderCalendarEvent = (event: CalendarEvent) => {
     const startDate = new Date(event.start_time);
     const endDate = new Date(event.end_time);
     const isPast = endDate < new Date();
-    
+
     // Determine color based on color_id
-    const eventColor = event.color_id && GOOGLE_CALENDAR_COLORS[event.color_id] 
-      ? GOOGLE_CALENDAR_COLORS[event.color_id] 
+    const eventColor = event.color_id && GOOGLE_CALENDAR_COLORS[event.color_id]
+      ? GOOGLE_CALENDAR_COLORS[event.color_id]
       : GOOGLE_CALENDAR_COLORS['default'];
 
     return (
       <SwipeableListItem key={event.id} onDelete={() => event.id && deleteCalendarEvent(event.id)}>
-        <View style={[styles.eventCard, isPast && styles.eventCardPast]}>
-          <View style={[styles.eventTimeBar, { backgroundColor: eventColor }]} />
-          <View style={styles.eventContent}>
-            <Text style={[styles.eventTitle, isPast && styles.eventTitlePast]}>
-              {event.summary}
-            </Text>
-            {event.description && (
-              <Text style={styles.eventDescription} numberOfLines={2}>
-                {event.description}
+        <TouchableOpacity
+          onPress={() => handleEventClick(event)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.eventCard, isPast && styles.eventCardPast]}>
+            <View style={[styles.eventTimeBar, { backgroundColor: eventColor }]} />
+            <View style={styles.eventContent}>
+              <Text style={[styles.eventTitle, isPast && styles.eventTitlePast]}>
+                {event.summary}
               </Text>
-            )}
-            {event.location && (
-              <Text style={styles.eventLocation}>📍 {event.location}</Text>
-            )}
-            <View style={styles.eventTimeContainer}>
-              <Text style={[styles.eventTime, { color: eventColor }]}>
-                {startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                {' - '}
-                {endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-              </Text>
+              {event.description && (
+                <Text style={styles.eventDescription} numberOfLines={2}>
+                  {event.description}
+                </Text>
+              )}
+              {event.location && (
+                <Text style={styles.eventLocation}>📍 {event.location}</Text>
+              )}
+              <View style={styles.eventTimeContainer}>
+                <Text style={[styles.eventTime, { color: eventColor }]}>
+                  {startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                  {' - '}
+                  {endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
+        </TouchableOpacity>
       </SwipeableListItem>
     );
   };
@@ -1815,6 +1947,108 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                   placeholderTextColor="rgba(153, 153, 153, 0.5)"
                 />
               </View>
+
+              <View style={styles.formRow}>
+                <Text style={[styles.fieldLabel, { color: popupTheme.accentColor }]}>Deadline:</Text>
+                <View style={styles.deadlineToggleContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.deadlineToggleButton,
+                      { backgroundColor: hasDeadline ? popupTheme.accentColor : 'rgba(153, 153, 153, 0.3)' }
+                    ]}
+                    onPress={() => {
+                      const newHasDeadline = !hasDeadline;
+                      setHasDeadline(newHasDeadline);
+                      if (newHasDeadline && !deadlineDate) {
+                        // Set default deadline to tomorrow
+                        const tomorrow = new Date();
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        setDeadlineDateObj(tomorrow);
+                        setDeadlineDate(tomorrow.toISOString().split('T')[0]);
+                        setDeadlineTimeObj(tomorrow);
+                        setDeadlineTime(tomorrow.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
+                      }
+                    }}
+                  >
+                    <Text style={[styles.deadlineToggleText, { color: popupTheme.buttonTextColor }]}>
+                      {hasDeadline ? 'Yes' : 'No'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {hasDeadline && (
+                <>
+                  <View style={styles.formRow}>
+                    <Text style={[styles.fieldLabel, { color: popupTheme.accentColor }]}>Deadline Date:</Text>
+                    <View>
+                      <View style={styles.inputWithIconContainer}>
+                        <TextInput
+                          style={[styles.fieldInputWithIcon, { color: popupTheme.accentColor, borderBottomColor: popupTheme.accentColor }]}
+                          value={deadlineDate}
+                          onChangeText={setDeadlineDate}
+                          placeholder="YYYY-MM-DD"
+                          placeholderTextColor="rgba(153, 153, 153, 0.5)"
+                        />
+                        <TouchableOpacity
+                          style={styles.pickerIconButton}
+                          onPress={() => setShowDeadlineDatePicker(!showDeadlineDatePicker)}
+                        >
+                          <CalendarIcon color={popupTheme.accentColor} />
+                        </TouchableOpacity>
+                      </View>
+                      {showDeadlineDatePicker && (
+                        <View style={styles.pickerContainerVisible}>
+                          <DateTimePicker
+                            value={deadlineDateObj}
+                            mode="date"
+                            display="spinner"
+                            onChange={handleDeadlineDateChange}
+                            textColor="#FFFFFF"
+                            themeVariant="dark"
+                            style={{ height: 200, width: '100%', backgroundColor: 'transparent', alignSelf: 'center' }}
+                          />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.formRow}>
+                    <Text style={[styles.fieldLabel, { color: popupTheme.accentColor }]}>Deadline Time:</Text>
+                    <View style={{ minHeight: 40 }}>
+                      <View style={styles.timeInputWithIconContainer}>
+                        <TextInput
+                          style={[styles.timeInputWithIcon, { color: popupTheme.accentColor, borderBottomColor: popupTheme.accentColor }]}
+                          value={deadlineTime}
+                          onChangeText={setDeadlineTime}
+                          placeholder="11:59pm"
+                          placeholderTextColor="rgba(153, 153, 153, 0.5)"
+                        />
+                        <TouchableOpacity
+                          style={styles.timePickerIconButton}
+                          onPress={() => setShowDeadlineTimePicker(!showDeadlineTimePicker)}
+                        >
+                          <ClockIcon color={popupTheme.accentColor} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+
+                  {showDeadlineTimePicker && (
+                    <View style={styles.timePickerContainerCentered}>
+                      <DateTimePicker
+                        value={deadlineTimeObj}
+                        mode="time"
+                        display="spinner"
+                        onChange={handleDeadlineTimeChange}
+                        textColor="#FFFFFF"
+                        themeVariant="dark"
+                        style={{ height: 150, width: 120, backgroundColor: 'transparent' }}
+                      />
+                    </View>
+                  )}
+                </>
+              )}
 
               <View style={styles.formRow}>
                 <Text style={[styles.fieldLabel, { color: popupTheme.accentColor }]}>Importance:</Text>
@@ -2516,6 +2750,24 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '400',
     marginTop: 8,
+  },
+  deadlineToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  deadlineToggleButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 24,
+    borderRadius: 15,
+    alignItems: 'center',
+    minWidth: 80,
+  },
+  deadlineToggleText: {
+    color: '#FFF',
+    fontFamily: 'Margarine',
+    fontSize: 16,
+    fontWeight: '400',
   },
   importanceButtons: {
     flexDirection: 'row',

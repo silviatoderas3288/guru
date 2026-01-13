@@ -85,7 +85,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     { type: 'name', value: 'Evil Genius with Russell Kane' },
     { type: 'name', value: 'The Happiness Lab: Getting Unstuck' },
     { type: 'id', value: '646788' }, // You're Dead to Me
-    { type: 'name', value: 'Up First' },
+    { type: 'name', value: 'Up First NPR' },
     { type: 'name', value: 'The New Yorker Radio Hour' }
   ];
 

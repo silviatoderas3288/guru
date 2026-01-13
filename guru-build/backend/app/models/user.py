@@ -26,5 +26,13 @@ class User(BaseModel):
     list_items = relationship("ListItem", cascade="all, delete-orphan")
     user_preferences = relationship("UserPreference", back_populates="user", cascade="all, delete-orphan", uselist=False)
 
+    # Phase 1: Scheduling Agent Relationships
+    workout_preferences = relationship("WorkoutPreference", back_populates="user", cascade="all, delete-orphan")
+    meal_preferences = relationship("MealPreference", back_populates="user", cascade="all, delete-orphan")
+    commute_preferences = relationship("CommutePreference", back_populates="user", cascade="all, delete-orphan")
+    schedule_suggestions = relationship("ScheduleSuggestion", back_populates="user", cascade="all, delete-orphan")
+    task_feedback = relationship("TaskCompletionFeedback", back_populates="user", cascade="all, delete-orphan")
+    schedule_history = relationship("ScheduleHistory", back_populates="user", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email})>"
