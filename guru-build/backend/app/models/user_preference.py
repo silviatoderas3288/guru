@@ -22,6 +22,17 @@ class UserPreference(BaseModel):
     workout_types = Column(ARRAY(String))  # Multiple types
     workout_duration = Column(String)  # Single selection
     workout_frequency = Column(String)  # Single selection
+    workout_days = Column(ARRAY(String))  # Multiple days (e.g. Mon, Wed, Fri)
+    workout_preferred_time = Column(String)  # Single selection (e.g. Morning, Evening)
+
+    # Commute preferences
+    commute_start = Column(String)  # "HH:MM"
+    commute_end = Column(String)  # "HH:MM"
+    commute_duration = Column(String)  # Single selection
+
+    # Chore preferences
+    chore_time = Column(String)  # Single selection (e.g. Weekend Mornings)
+    chore_duration = Column(String)  # Single selection
 
     # Focus & Schedule preferences
     bed_time = Column(String, nullable=True)  # "HH:MM"
