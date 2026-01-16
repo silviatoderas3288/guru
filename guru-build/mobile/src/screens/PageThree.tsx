@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { PodcastApiService, Podcast as ApiPodcast, PodcastEpisode as ApiEpisode } from '../services/podcastApi';
+import { usePreferencesStore } from '../store/usePreferencesStore';
 
 const SettingsIcon = () => (
   <Svg width="19" height="20" viewBox="0 0 19 20" fill="none">
@@ -67,6 +68,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   const [showScheduleOptionsModal, setShowScheduleOptionsModal] = useState(false);
   const [selectedPodcast, setSelectedPodcast] = useState<Podcast | null>(null);
   const [loading, setLoading] = useState(true);
+  const { toggleSettingsModal } = usePreferencesStore();
 
   // State for podcast data
   const [currentFavorites, setCurrentFavorites] = useState<Podcast[]>([]);
@@ -303,7 +305,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
         <View style={styles.content}>
           {/* Header with Settings Button */}
           <View style={styles.header}>
-            <TouchableOpacity style={styles.settingsButtonWrapper}>
+            <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
               <LinearGradient
                 colors={['#FF9D00', '#4D5AEE']}
                 start={{ x: 0, y: 0 }}

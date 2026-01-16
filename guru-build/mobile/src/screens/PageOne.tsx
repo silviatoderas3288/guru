@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ImageBackground, 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
+import { usePreferencesStore } from '../store/usePreferencesStore';
 
 interface BingoItem {
   id: number;
@@ -46,6 +47,7 @@ export const PageOne: React.FC<PageOneProps> = ({ onNavigateToEntries }) => {
   const [items, setItems] = useState<BingoItem[]>(DEFAULT_ITEMS);
   const [isEditing, setIsEditing] = useState(true); // Start in edit mode by default
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const { toggleSettingsModal } = usePreferencesStore();
 
   // Load saved bingo items from AsyncStorage on mount
   useEffect(() => {
@@ -157,7 +159,7 @@ export const PageOne: React.FC<PageOneProps> = ({ onNavigateToEntries }) => {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.settingsButtonWrapper}>
+        <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
           <LinearGradient
             colors={['#FF9D00', '#4D5AEE']}
             start={{ x: 0, y: 0 }}

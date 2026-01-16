@@ -6,6 +6,7 @@ import { ListItemApiService, ListItemType, ListItem as ApiListItem } from '../se
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { usePreferencesStore } from '../store/usePreferencesStore';
 
 interface Task {
   id: string;
@@ -199,6 +200,7 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const { toggleSettingsModal } = usePreferencesStore();
 
   // Weekly goals and to-do list state
   const [weeklyGoals, setWeeklyGoals] = useState<ListItem[]>([]);
@@ -1526,7 +1528,7 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       {/* Header with Settings Button */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.settingsButtonWrapper}>
+        <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
           <LinearGradient
             colors={['#FF9D00', '#4D5AEE']}
             start={{ x: 0, y: 0 }}

@@ -17,6 +17,10 @@ interface PreferenceDropdownProps {
   selectedOptions: string[];
   onSelectionChange: (selected: string[]) => void;
   multiSelect?: boolean;
+  labelColor?: string;
+  boxImage?: any;
+  arrowImage?: any;
+  underlineImage?: any;
 }
 
 export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
@@ -25,6 +29,10 @@ export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
   selectedOptions,
   onSelectionChange,
   multiSelect = true,
+  labelColor = '#FF9D00',
+  boxImage,
+  arrowImage,
+  underlineImage,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [tempSelections, setTempSelections] = useState<string[]>([]);
@@ -64,9 +72,9 @@ export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
     <View style={styles.container}>
       {/* Label with underline */}
       <View style={styles.labelContainer}>
-        <Text style={styles.label}>{label}</Text>
+        <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
         <Image
-          source={require('../../assets/under_pref.png')}
+          source={underlineImage || require('../../assets/under_pref.png')}
           style={styles.underline}
           resizeMode="contain"
         />
@@ -75,7 +83,7 @@ export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
       {/* Dropdown Box */}
       <TouchableOpacity onPress={handleOpen}>
         <ImageBackground
-          source={require('../../assets/box.png')}
+          source={boxImage || require('../../assets/box.png')}
           style={styles.dropdownBox}
           resizeMode="stretch"
         >
@@ -83,7 +91,7 @@ export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
             {displayValue}
           </Text>
           <Image
-            source={require('../../assets/arrow.png')}
+            source={arrowImage || require('../../assets/arrow.png')}
             style={[
               styles.arrow,
               isOpen && styles.arrowRotated
@@ -124,7 +132,11 @@ export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
                       {option}
                     </Text>
                     {isSelected && (
-                      <Text style={styles.checkmark}>✓</Text>
+                      <Image
+                        source={require('../../assets/check.png')}
+                        style={styles.checkmarkImage}
+                        resizeMode="contain"
+                      />
                     )}
                   </TouchableOpacity>
                 );
@@ -224,10 +236,9 @@ const styles = StyleSheet.create({
     color: '#FF9D00',
     fontWeight: '600',
   },
-  checkmark: {
-    fontSize: 20,
-    color: '#FF9D00',
-    fontWeight: 'bold',
+  checkmarkImage: {
+    width: 20,
+    height: 20,
   },
   doneButton: {
     backgroundColor: '#FF9D00',

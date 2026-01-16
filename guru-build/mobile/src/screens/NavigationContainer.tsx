@@ -9,6 +9,7 @@ import { PageFive } from './PageFive';
 import { Entries } from './Entries';
 import { EntryDetail } from './EntryDetail';
 import { journalApi } from '../services/journalApi';
+import { SettingsModal } from '../components/SettingsModal';
 
 const ICON_COLOR = '#4D5AEE';
 const ACTIVE_COLOR = '#FF9D00';
@@ -266,6 +267,9 @@ export const NavigationContainer: React.FC = () => {
         <NavButton page="four" />
         <NavButton page="five" />
       </View>
+
+      {/* Global Settings Modal - can be triggered from any page */}
+      <SettingsModal />
     </View>
   );
 };

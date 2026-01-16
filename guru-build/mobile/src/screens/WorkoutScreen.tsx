@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { ListItemApiService } from '../services/listItemApi';
 import { WorkoutApiService, Workout, WorkoutSection, Exercise } from '../services/workoutApi';
+import { usePreferencesStore } from '../store/usePreferencesStore';
 
 const SettingsIcon = () => (
   <Svg width="19" height="20" viewBox="0 0 19 20" fill="none">
@@ -110,6 +111,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [weeklyGoalIds, setWeeklyGoalIds] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const { toggleSettingsModal } = usePreferencesStore();
 
   // Modal states
   const [showAddWorkoutModal, setShowAddWorkoutModal] = useState(false);
@@ -470,7 +472,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
         <View style={styles.content}>
           {/* Header with Settings Button */}
           <View style={styles.header}>
-            <TouchableOpacity style={styles.settingsButtonWrapper}>
+            <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
               <LinearGradient
                 colors={['#FF9D00', '#4D5AEE']}
                 start={{ x: 0, y: 0 }}
