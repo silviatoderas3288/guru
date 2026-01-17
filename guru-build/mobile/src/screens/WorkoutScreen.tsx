@@ -18,6 +18,7 @@ import Svg, { Path } from 'react-native-svg';
 import { ListItemApiService } from '../services/listItemApi';
 import { WorkoutApiService, Workout, WorkoutSection, Exercise } from '../services/workoutApi';
 import { usePreferencesStore } from '../store/usePreferencesStore';
+import schedulingAgentApi, { GenerateScheduleResponse, ScheduledEvent } from '../services/schedulingAgentApi';
 
 const SettingsIcon = () => (
   <Svg width="19" height="20" viewBox="0 0 19 20" fill="none">
@@ -120,6 +121,13 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
   const [showEditWorkoutModal, setShowEditWorkoutModal] = useState(false);
   const [showEditSectionModal, setShowEditSectionModal] = useState(false);
   const [showEditExerciseModal, setShowEditExerciseModal] = useState(false);
+  const [showAIScheduleModal, setShowAIScheduleModal] = useState(false);
+  const [aiScheduleLoading, setAiScheduleLoading] = useState(false);
+  const [aiScheduleResult, setAiScheduleResult] = useState<GenerateScheduleResponse | null>(null);
+
+  // Edit/Delete mode states
+  const [editMode, setEditMode] = useState(false);
+  const [deleteMode, setDeleteMode] = useState(false);
 
   // Form states
   const [currentWorkout, setCurrentWorkout] = useState<Workout | null>(null);
@@ -214,6 +222,36 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
     setShowScheduleModal(true);
   };
 
+  const handleAISchedule = async () => {
+    setAiScheduleLoading(true);
+    setShowAIScheduleModal(true);
+
+    try {
+      const result = await schedulingAgentApi.generateSchedule({
+        forceRegenerate: true,
+      });
+      setAiScheduleResult(result);
+    } catch (error) {
+      console.error('Error generating AI schedule:', error);
+      Alert.alert(
+        'AI Scheduling Error',
+        'Failed to generate schedule. Please make sure you have set your preferences in Settings.'
+      );
+      setShowAIScheduleModal(false);
+    } finally {
+      setAiScheduleLoading(false);
+    }
+  };
+
+  const formatTime = (isoString: string) => {
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return isoString;
+    }
+  };
+
   const handleScheduleWorkout = (workout: Workout) => {
     setShowScheduleModal(false);
 
@@ -234,6 +272,48 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
         title: workout.title,
         description: description,
       });
+    }
+  };
+
+  const handleQuickAddExercise = async (workout: Workout) => {
+    try {
+      let targetSection = workout.sections[0];
+      
+      if (!targetSection) {
+        // Create default section if none exists
+        const maxOrder = 0;
+        const newSection = await WorkoutApiService.createSection(workout.id!, {
+          title: 'Main',
+          order: maxOrder + 1,
+          exercises: [],
+        });
+        targetSection = newSection;
+        // Refresh workouts to ensure state consistency
+        await loadWorkouts();
+      } else {
+        setCurrentSection(targetSection);
+      }
+      
+      // We need to set the current section for the modal
+      // If we just created it, we might need to find it in the reloaded data
+      // But for UI responsiveness, let's set it directly if possible or rely on the fact that loadWorkouts updates state
+      
+      // Since loadWorkouts is async, we can't guarantee 'targetSection' is the object in the new 'workouts' state
+      // strictly speaking. However, for the ID it should be fine.
+      
+      // A better approach for the modal is to just store the section ID and Title, 
+      // but the current implementation uses the full object.
+      
+      // Let's find the section in the latest workouts if we reloaded, 
+      // or just use the one we have if it existed.
+      if (targetSection) {
+         setCurrentSection(targetSection);
+         setShowAddExerciseModal(true);
+      }
+
+    } catch (error) {
+      console.error('Error in quick add exercise:', error);
+      Alert.alert('Error', 'Failed to prepare for adding exercise');
     }
   };
 
@@ -467,248 +547,242 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView}>
-        <View style={styles.content}>
-          {/* Header with Settings Button */}
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
-              <LinearGradient
-                colors={['#FF9D00', '#4D5AEE']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={styles.settingsButton}
-              >
-                <SettingsIcon />
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-
-          {/* Title */}
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>Workout Plan</Text>
-            <Image
-              source={require('../../assets/under_pref.png')}
-              style={styles.titleUnderline}
-              resizeMode="contain"
-            />
-          </View>
-
-          {/* Stats Section */}
-          <ImageBackground
-            source={require('../../assets/stats.png')}
-            style={styles.statsContainer}
-            resizeMode="stretch"
+    <>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} scrollEnabled={!showAIScheduleModal}>
+      {/* Header with Settings Button */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
+          <LinearGradient
+            colors={['#FF9D00', '#4D5AEE']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.settingsButton}
           >
-            <Text style={styles.statsTitle}>Stats</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{completedCount}/{totalCount}</Text>
-                <Text style={styles.statLabel}>Completed</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{totalActiveTime} min</Text>
-                <Text style={styles.statLabel}>Total active time</Text>
-              </View>
-            </View>
-            <View style={styles.caloriesContainer}>
-              <Text style={styles.statValue}>{totalCalories}</Text>
-              <Text style={styles.statLabel}>Calories</Text>
-            </View>
-          </ImageBackground>
+            <SettingsIcon />
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
 
-          {/* Add Workout Button */}
+      {/* Title */}
+      <View style={styles.titleContainer}>
+        <Text style={styles.title}>Workout Plan</Text>
+        <Image
+          source={require('../../assets/under_pref.png')}
+          style={styles.titleUnderline}
+          resizeMode="contain"
+        />
+      </View>
+
+      {/* Stats Section */}
+      <ImageBackground
+        source={require('../../assets/stats.png')}
+        style={styles.statsContainer}
+        resizeMode="stretch"
+      >
+        <Text style={styles.statsTitle}>Stats</Text>
+        <View style={styles.statsGrid}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{completedCount}/{totalCount}</Text>
+            <Text style={styles.statLabel}>Completed</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{totalActiveTime} min</Text>
+            <Text style={styles.statLabel}>Total active time</Text>
+          </View>
+        </View>
+        <View style={styles.caloriesContainer}>
+          <Text style={styles.statValue}>{totalCalories}</Text>
+          <Text style={styles.statLabel}>Calories</Text>
+        </View>
+      </ImageBackground>
+
+      {/* Add Workout Button */}
+      <TouchableOpacity
+        style={styles.addWorkoutButton}
+        onPress={() => setShowAddWorkoutModal(true)}
+      >
+        <Text style={styles.addWorkoutButtonText}>+</Text>
+      </TouchableOpacity>
+
+      {/* Edit/Delete Controls for Collapsible Sections (only show when workouts exist) */}
+      {workouts.length > 0 && (
+        <View style={styles.collapsibleControlsRow}>
           <TouchableOpacity
-            style={styles.addWorkoutButton}
-            onPress={() => setShowAddWorkoutModal(true)}
+            style={[
+              styles.collapsibleEditButton,
+              editMode && styles.collapsibleEditButtonActive
+            ]}
+            onPress={() => {
+              setEditMode(!editMode);
+              setDeleteMode(false);
+            }}
           >
-            <Text style={styles.addWorkoutButtonText}>+</Text>
+            <EditIcon size={20} color={editMode ? '#FFF' : '#4D5AEE'} />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.collapsibleDeleteButton,
+              deleteMode && styles.collapsibleDeleteButtonActive
+            ]}
+            onPress={() => {
+              setDeleteMode(!deleteMode);
+              setEditMode(false);
+            }}
+          >
+            <TrashIcon size={20} color={deleteMode ? '#FFF' : '#FF3B30'} />
+          </TouchableOpacity>
+        </View>
+      )}
 
-          {/* Workout Sections */}
-          {workouts.map((workout) => {
-            const isExpanded = expandedSections.includes(workout.id!);
-            const isCompleted = workout.completed;
+      {/* Workout Sections */}
+      {workouts.map((workout) => {
+        const isExpanded = expandedSections.includes(workout.id!);
+        const isCompleted = workout.completed;
 
-            return (
-              <View key={workout.id} style={styles.workoutSection}>
-                {/* Workout Header */}
+        return (
+          <View key={workout.id} style={styles.workoutSection}>
+            {/* Workout Header */}
+            <TouchableOpacity
+              onPress={() => toggleSection(workout.id!)}
+              activeOpacity={0.8}
+            >
+              <ImageBackground
+                source={require('../../assets/box.png')}
+                style={styles.workoutHeader}
+                resizeMode="stretch"
+              >
+                {/* Checkbox */}
                 <TouchableOpacity
-                  onPress={() => toggleSection(workout.id!)}
-                  activeOpacity={0.8}
+                  style={styles.checkboxContainer}
+                  onPress={() => toggleWorkoutCompletion(workout)}
                 >
                   <ImageBackground
-                    source={require('../../assets/box.png')}
-                    style={styles.workoutHeader}
-                    resizeMode="stretch"
+                    source={require('../../assets/to_do.png')}
+                    style={styles.checkbox}
+                    resizeMode="contain"
                   >
-                    {/* Checkbox */}
-                    <TouchableOpacity
-                      style={styles.checkboxContainer}
-                      onPress={() => toggleWorkoutCompletion(workout)}
-                    >
-                      <ImageBackground
-                        source={require('../../assets/to_do.png')}
-                        style={styles.checkbox}
+                    {isCompleted && (
+                      <Image
+                        source={require('../../assets/check.png')}
+                        style={styles.checkmark}
                         resizeMode="contain"
-                      >
-                        {isCompleted && (
-                          <Image
-                            source={require('../../assets/check.png')}
-                            style={styles.checkmark}
-                            resizeMode="contain"
-                          />
-                        )}
-                      </ImageBackground>
-                    </TouchableOpacity>
-
-                    {/* Title */}
-                    <Text style={styles.workoutTitle}>
-                      {workout.title}
-                    </Text>
-
-                    {/* Arrow */}
-                    <Image
-                      source={require('../../assets/arrow.png')}
-                      style={[
-                        styles.arrow,
-                        isExpanded && styles.arrowExpanded,
-                      ]}
-                      resizeMode="contain"
-                    />
+                      />
+                    )}
                   </ImageBackground>
                 </TouchableOpacity>
 
-                {/* Expanded Content */}
-                {isExpanded && (
-                  <View style={styles.expandedContent}>
-                    <Text style={styles.activitiesHeader}>Activities</Text>
+                {/* Title */}
+                <Text style={styles.workoutTitle}>
+                  {workout.title}
+                </Text>
 
-                    <TouchableOpacity
-                      style={styles.addSectionButton}
-                      onPress={() => {
-                        setCurrentWorkout(workout);
-                        setShowAddSectionModal(true);
-                      }}
-                    >
-                      <Text style={styles.addSectionButtonText}>+</Text>
-                    </TouchableOpacity>
-
-                    {/* Workout Edit Controls */}
-                    <View style={styles.workoutEditBar}>
-                      <View style={styles.workoutControls}>
-                        <TouchableOpacity
-                          onPress={() => {
-                            setCurrentWorkout(workout);
-                            setWorkoutTitle(workout.title);
-                            setWorkoutDescription(workout.description || '');
-                            setShowEditWorkoutModal(true);
-                          }}
-                          style={styles.editIconButton}
-                        >
-                          <EditIcon size={24} color="#4D5AEE" />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => handleDeleteWorkout(workout.id!)}
-                          style={styles.deleteIconButton}
-                        >
-                          <TrashIcon size={24} color="#FF3B30" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    {/* Conditional Separator */}
-                    {workout.sections.length > 0 && <View style={styles.separatorLine} />}
-
-                    {/* Sections */}
-                    {workout.sections.map((section) => (
-                      <View key={section.id} style={styles.sectionContainer}>
-                        <View style={styles.sectionHeader}>
-                          <Text style={styles.sectionTitle}>{section.title}</Text>
-                          <View style={styles.sectionControls}>
-                            <TouchableOpacity
-                              onPress={() => {
-                                setCurrentSection(section);
-                                setSectionTitle(section.title);
-                                setShowEditSectionModal(true);
-                              }}
-                              style={styles.editIconButton}
-                            >
-                              <EditIcon size={20} color="#4D5AEE" />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => handleDeleteSection(section.id!)}
-                              style={styles.deleteIconButton}
-                            >
-                              <TrashIcon size={20} color="#FF3B30" />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-
-                        {/* Add Exercise Button */}
-                        <TouchableOpacity
-                          style={styles.addExerciseButton}
-                          onPress={() => {
-                            setCurrentSection(section);
-                            setShowAddExerciseModal(true);
-                          }}
-                        >
-                          <Text style={styles.addExerciseButtonText}>+ Add Exercise</Text>
-                        </TouchableOpacity>
-
-                        {/* Exercises */}
-                        <View style={styles.exerciseList}>
-                          {section.exercises.map((exercise) => (
-                            <View key={exercise.id} style={styles.exerciseItem}>
-                              <View style={styles.exerciseContent}>
-                                <Text style={styles.exerciseName}>{exercise.name}</Text>
-                                <Text style={styles.exerciseDetails}>
-                                  {exercise.sets && `${exercise.sets} sets`}
-                                  {exercise.sets && exercise.reps && ' × '}
-                                  {exercise.reps && `${exercise.reps} reps`}
-                                  {exercise.duration && exercise.duration}
-                                </Text>
-                              </View>
-                              <View style={styles.exerciseControls}>
-                                <TouchableOpacity
-                                  onPress={() => {
-                                    setCurrentExercise(exercise);
-                                    setExerciseName(exercise.name);
-                                    setExerciseSets(exercise.sets || '');
-                                    setExerciseReps(exercise.reps || '');
-                                    setExerciseDuration(exercise.duration || '');
-                                    setShowEditExerciseModal(true);
-                                  }}
-                                  style={styles.editIconButton}
-                                >
-                                  <EditIcon size={18} color="#4D5AEE" />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                  onPress={() => handleDeleteExercise(exercise.id!)}
-                                  style={styles.deleteIconButton}
-                                >
-                                  <TrashIcon size={18} color="#FF3B30" />
-                                </TouchableOpacity>
-                              </View>
-                            </View>
-                          ))}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
+                {/* Arrow or Edit/Delete Icon based on mode */}
+                {editMode ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setCurrentWorkout(workout);
+                      setWorkoutTitle(workout.title);
+                      setWorkoutDescription(workout.description || '');
+                      setShowEditWorkoutModal(true);
+                      setEditMode(false);
+                    }}
+                    style={styles.workoutHeaderIcon}
+                  >
+                    <EditIcon size={20} color="#4D5AEE" />
+                  </TouchableOpacity>
+                ) : deleteMode ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      handleDeleteWorkout(workout.id!);
+                      setDeleteMode(false);
+                    }}
+                    style={styles.workoutHeaderIcon}
+                  >
+                    <TrashIcon size={20} color="#FF3B30" />
+                  </TouchableOpacity>
+                ) : (
+                  <Image
+                    source={require('../../assets/arrow.png')}
+                    style={[
+                      styles.arrow,
+                      isExpanded && styles.arrowExpanded,
+                    ]}
+                    resizeMode="contain"
+                  />
                 )}
-              </View>
-            );
-          })}
+              </ImageBackground>
+            </TouchableOpacity>
 
-          {/* Schedule Button */}
-          <TouchableOpacity
-            style={styles.scheduleButton}
-            onPress={handleSchedule}
-          >
-            <Text style={styles.scheduleButtonText}>Schedule</Text>
-          </TouchableOpacity>
-        </View>
+            {/* Expanded Content */}
+            {isExpanded && (
+              <View style={styles.expandedContent}>
+                {/* Activities Header Row - Title left, Add button right */}
+                <View style={styles.activitiesHeaderRow}>
+                  <Text style={styles.activitiesHeader}>Activities</Text>
+                  <TouchableOpacity
+                    onPress={() => handleQuickAddExercise(workout)}
+                    style={styles.addExerciseIconButton}
+                  >
+                    <Text style={styles.addExerciseIconText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Exercises - directly without section headers */}
+                <View style={styles.exerciseList}>
+                  {(() => {
+                    const allExercises = workout.sections.flatMap((section) => section.exercises);
+                    return allExercises.map((exercise, index) => (
+                      <View key={exercise.id} style={[
+                        styles.exerciseItem,
+                        index < allExercises.length - 1 && styles.exerciseItemWithSeparator
+                      ]}>
+                        <View style={styles.exerciseContent}>
+                          <Text style={styles.exerciseName}>{exercise.name}</Text>
+                          <Text style={styles.exerciseDetails}>
+                            {exercise.sets && `${exercise.sets} sets`}
+                            {exercise.sets && exercise.reps && ' × '}
+                            {exercise.reps && `${exercise.reps} reps`}
+                            {exercise.duration && exercise.duration}
+                          </Text>
+                        </View>
+                        <View style={styles.exerciseControls}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setCurrentExercise(exercise);
+                              setExerciseName(exercise.name);
+                              setExerciseSets(exercise.sets || '');
+                              setExerciseReps(exercise.reps || '');
+                              setExerciseDuration(exercise.duration || '');
+                              setShowEditExerciseModal(true);
+                            }}
+                            style={styles.editIconButton}
+                          >
+                            <EditIcon size={18} color="#4D5AEE" />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleDeleteExercise(exercise.id!)}
+                            style={styles.deleteIconButton}
+                          >
+                            <TrashIcon size={18} color="#FF3B30" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ));
+                  })()}
+                </View>
+              </View>
+            )}
+          </View>
+        );
+      })}
+
+      {/* Schedule Button */}
+      <TouchableOpacity
+        style={styles.scheduleButton}
+        onPress={handleSchedule}
+      >
+        <Text style={styles.scheduleButtonText}>Schedule</Text>
+      </TouchableOpacity>
       </ScrollView>
 
       {/* Schedule Modal */}
@@ -723,7 +797,10 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
           onPress={() => setShowScheduleModal(false)}
         >
           <Pressable style={styles.modalContent}>
-            <TouchableOpacity style={styles.aiButton} onPress={() => Alert.alert('AI Feature', 'AI workout scheduling coming soon!')}>
+            <TouchableOpacity style={styles.aiButton} onPress={() => {
+              setShowScheduleModal(false);
+              handleAISchedule();
+            }}>
               <LinearGradient
                 colors={['#FF9D00', '#4D5AEE']}
                 start={{ x: 0, y: 0 }}
@@ -945,7 +1022,124 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
           </Pressable>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+
+      {/* AI Schedule Result Modal */}
+      <Modal
+  visible={showAIScheduleModal}
+  transparent
+  animationType="fade"
+  onRequestClose={() => setShowAIScheduleModal(false)}
+>
+  {/* Tap outside to close */}
+  <View style={styles.aiModalOverlay}>
+    <Pressable
+      style={StyleSheet.absoluteFill}
+      onPress={() => setShowAIScheduleModal(false)}
+    />
+      {/* Card (prevents closing when tapping inside) */}
+      <View style={styles.aiModalCard}>
+          <ScrollView
+            style={styles.aiScheduleScrollView}
+            contentContainerStyle={styles.aiScheduleScrollContent}
+            showsVerticalScrollIndicator={false}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+          >
+            {aiScheduleLoading ? (
+              <View style={styles.aiLoadingContainer}>
+                <Image
+                  source={require('../../assets/ai.png')}
+                  style={styles.aiLoadingIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.aiLoadingText}>AI is creating your schedule...</Text>
+                <Text style={styles.aiLoadingSubtext}>
+                  Analyzing your preferences and calendar
+                </Text>
+              </View>
+            ) : aiScheduleResult ? (
+              <>
+                <View style={styles.aiScheduleHeader}>
+                  <Text style={styles.aiScheduleTitle}>Your AI Schedule</Text>
+                </View>
+
+                {aiScheduleResult.warnings?.length ? (
+                  <View style={styles.warningsContainer}>
+                    {aiScheduleResult.warnings.map((warning, index) => (
+                      <Text key={index} style={styles.warningText}>
+                        {warning.message}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
+
+                {aiScheduleResult.scheduledEvents?.length ? (
+                  Object.entries(
+                    aiScheduleResult.scheduledEvents.reduce((acc, event) => {
+                      const day = event.day || 'Unscheduled';
+                      if (!acc[day]) acc[day] = [];
+                      acc[day].push(event);
+                      return acc;
+                    }, {} as Record<string, ScheduledEvent[]>)
+                  ).map(([day, events]) => (
+                    <View key={day} style={styles.daySection}>
+                      <Text style={styles.dayHeader}>{day}</Text>
+                      {events.map((event, index) => (
+                        <View key={index} style={styles.scheduleEventItem}>
+                          <View style={styles.eventDetails}>
+                            <Text style={styles.eventTitle}>{event.title}</Text>
+                            <Text style={styles.eventTime}>
+                              {formatTime(event.start_time)} - {formatTime(event.end_time)}
+                            </Text>
+                            {event.description ? (
+                              <Text style={styles.eventDescription}>{event.description}</Text>
+                            ) : null}
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.noEventsText}>No events scheduled</Text>
+                )}
+
+                <View style={styles.aiScheduleButtons}>
+                  <TouchableOpacity
+                    style={[styles.aiScheduleButton, styles.regenerateButton]}
+                    onPress={handleAISchedule}
+                  >
+                    <Text style={styles.regenerateButtonText}>Regenerate</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.aiScheduleButton, styles.acceptButton]}
+                    onPress={() => {
+                      setShowAIScheduleModal(false);
+                      Alert.alert(
+                        'Schedule Saved',
+                        'Your AI-generated schedule has been saved!'
+                      );
+                    }}
+                  >
+                    <Text style={styles.acceptButtonText}>Accept</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : null}
+
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setShowAIScheduleModal(false)}
+            >
+              <Text style={styles.modalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </ScrollView>
+      </View>
+    </View>
+</Modal>
+
+
+    </>
   );
 };
 
@@ -958,7 +1152,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
+    paddingTop: 20,
+    paddingHorizontal: 16,
     paddingBottom: 100,
   },
   loadingContainer: {
@@ -973,10 +1168,9 @@ const styles = StyleSheet.create({
   },
   header: {
     width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    marginBottom: 10,
+    alignItems: 'flex-end',
+    paddingTop: 20,
+    marginBottom: 20,
   },
   settingsButtonWrapper: {
     shadowColor: '#000',
@@ -995,9 +1189,9 @@ const styles = StyleSheet.create({
   },
   titleContainer: {
     marginBottom: 20,
+    alignItems: 'center',
   },
   title: {
-    marginTop: 40,
     fontSize: 28,
     fontFamily: 'Margarine',
     color: '#FF9D00',
@@ -1066,6 +1260,40 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     marginTop: -4,
   },
+  collapsibleControlsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+    paddingRight: 16,
+  },
+  collapsibleEditButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F0F0FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#4D5AEE',
+  },
+  collapsibleEditButtonActive: {
+    backgroundColor: '#4D5AEE',
+  },
+  collapsibleDeleteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFF0F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FF3B30',
+  },
+  collapsibleDeleteButtonActive: {
+    backgroundColor: '#FF3B30',
+  },
   workoutSection: {
     marginBottom: 12,
   },
@@ -1098,6 +1326,12 @@ const styles = StyleSheet.create({
   arrow: {
     width: 20,
     height: 20,
+  },
+  workoutHeaderIcon: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   arrowExpanded: {
     transform: [{ rotate: '180deg' }],
@@ -1134,12 +1368,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingBottom: 12,
   },
+  activitiesHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   activitiesHeader: {
     fontSize: 20,
     fontFamily: 'Margarine',
     color: '#FF9D00',
-    marginBottom: 10,
-    textAlign: 'center',
   },
   separatorLine: {
     height: 1,
@@ -1197,6 +1435,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Margarine',
   },
+  addExerciseIconButton: {
+    padding: 4,
+    marginLeft: 4,
+  },
+  addExerciseIconText: {
+    fontSize: 22,
+    color: '#4D5AEE',
+    fontFamily: 'Margarine',
+    lineHeight: 24,
+  },
   exerciseList: {
     gap: 8,
   },
@@ -1205,6 +1453,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 8,
+  },
+  exerciseItemWithSeparator: {
     borderBottomWidth: 1,
     borderBottomColor: '#FF9D00',
   },
@@ -1403,4 +1653,196 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     fontWeight: '700',
   },
+  // AI Schedule Modal Styles
+// AI Schedule Modal Styles
+aiModalOverlay: {
+  flex: 1,
+  backgroundColor: 'rgba(0,0,0,0.5)',
+  justifyContent: 'center',
+  alignItems: 'center',
+  paddingHorizontal: 16,
+},
+aiModalCard: {
+  width: '100%',
+  maxWidth: 420,
+  height: '80%',
+  backgroundColor: '#F7E8FF',
+  borderRadius: 22,
+  overflow: 'hidden',
+
+  // nicer iOS shadow
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 10 },
+  shadowOpacity: 0.18,
+  shadowRadius: 20,
+  elevation: 12,
+},
+
+aiScheduleScrollView: {
+  flex: 1,
+  width: '100%',
+},
+aiScheduleScrollContent: {
+  paddingHorizontal: 18,
+  paddingTop: 14,
+  paddingBottom: 28,
+},
+aiLoadingContainer: {
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingVertical: 40,
+},
+aiLoadingIcon: {
+  width: 60,
+  height: 60,
+  marginBottom: 20,
+},
+aiLoadingText: {
+  fontSize: 18,
+  fontFamily: 'Margarine',
+  color: '#4D5AEE',
+  textAlign: 'center',
+  marginBottom: 8,
+},
+aiLoadingSubtext: {
+  fontSize: 14,
+  fontFamily: 'Margarine',
+  color: '#666',
+  textAlign: 'center',
+},
+aiScheduleHeader: {
+  paddingBottom: 12,
+  marginBottom: 10,
+  borderBottomWidth: 1,
+  borderBottomColor: 'rgba(0,0,0,0.08)',
+},
+
+aiScheduleTitle: {
+  fontSize: 22,
+  fontFamily: 'Margarine',
+  color: '#4D5AEE',
+  textAlign: 'center',
+},
+daySection: {
+  marginTop: 14,
+},
+
+dayHeader: {
+  fontSize: 16,
+  fontFamily: 'Margarine',
+  color: '#FF9D00',
+  marginBottom: 10,
+},
+scheduleEventItem: {
+  backgroundColor: 'rgba(77, 90, 238, 0.85)',
+  borderRadius: 16,
+  paddingVertical: 12,
+  paddingHorizontal: 14,
+  marginBottom: 10,
+
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.08,
+  shadowRadius: 10,
+  elevation: 3,
+},
+
+eventDetails: {
+  gap: 4,
+},
+
+eventTitle: {
+  fontSize: 16,
+  fontFamily: 'Margarine',
+  color: '#ffffff', // deeper blue looks nicer
+},
+
+eventTime: {
+  fontSize: 13,
+  fontFamily: 'Margarine',
+  color: '#FF9D00',
+  opacity: 0.9,
+},
+
+eventDescription: {
+  fontSize: 13,
+  fontFamily: 'Margarine',
+  color: '#ffffff',
+  marginTop: 4,
+},
+
+warningsContainer: {
+  backgroundColor: '#FFF3E0',
+  borderRadius: 14,
+  padding: 12,
+  marginBottom: 12,
+  borderWidth: 1,
+  borderColor: 'rgba(255,157,0,0.25)',
+},
+
+  warningText: {
+    fontSize: 13,
+    fontFamily: 'Margarine',
+    color: '#A35A00',
+    marginBottom: 6,
+  },
+  noEventsText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+    fontStyle: 'italic',
+  },
+  aiScheduleButtons: {  flexDirection: 'row',
+  gap: 12,
+  marginTop: 14,
+  marginBottom: 10,
+},
+
+aiScheduleButton: {
+  flex: 1,
+  paddingVertical: 12,
+  borderRadius: 18,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+
+regenerateButton: {
+  backgroundColor: '#FFFFFF',
+  borderWidth: 1,
+  borderColor: 'rgba(77,90,238,0.35)',
+},
+
+regenerateButtonText: {
+  fontSize: 16,
+  fontFamily: 'Margarine',
+  color: '#4D5AEE',
+},
+
+acceptButton: {
+  backgroundColor: '#4D5AEE',
+},
+
+acceptButtonText: {
+  fontSize: 16,
+  fontFamily: 'Margarine',
+  color: '#FFF',
+},
+// modalCloseButton: {
+//   marginTop: 6,
+//   paddingVertical: 10,
+//   borderRadius: 16,
+//   alignItems: 'center',
+//   backgroundColor: 'rgba(0,0,0,0.06)',
+// },
+
+// modalCloseText: {
+//   fontSize: 14,
+//   fontFamily: 'Margarine',
+//   color: '#333',
+// },
+
+
 });

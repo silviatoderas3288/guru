@@ -248,7 +248,6 @@ const styles = StyleSheet.create({
   header: {
     width: '100%',
     alignItems: 'flex-end',
-    paddingRight: 16,
     paddingTop: 20,
     marginBottom: 20,
   },

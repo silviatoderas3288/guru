@@ -1,6 +1,6 @@
 import axios from 'axios';
+import { API_URL } from './apiConfig';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 console.log('Journal API URL:', API_URL);
 
 export interface JournalEntry {

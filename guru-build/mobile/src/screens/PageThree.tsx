@@ -300,13 +300,11 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView}>
-        <View style={styles.content}>
-          {/* Header with Settings Button */}
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
-              <LinearGradient
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Header with Settings Button */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
+          <LinearGradient
                 colors={['#FF9D00', '#4D5AEE']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 0, y: 1 }}
@@ -438,12 +436,10 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
             <Text style={styles.scheduleButtonText}>Schedule</Text>
           </TouchableOpacity>
 
-          {/* Helper Text */}
-          <Text style={styles.helperText}>
-            Schedule some listening time in your calendar
-          </Text>
-        </View>
-      </ScrollView>
+      {/* Helper Text */}
+      <Text style={styles.helperText}>
+        Schedule some listening time in your calendar
+      </Text>
 
       {/* Main Podcast Modal */}
       <Modal
@@ -553,7 +549,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
           </Pressable>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+    </ScrollView>
   );
 };
 
@@ -566,7 +562,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
+    paddingTop: 20,
+    paddingHorizontal: 16,
     paddingBottom: 100,
   },
   loadingContainer: {
@@ -583,7 +580,8 @@ const styles = StyleSheet.create({
   header: {
     width: '100%',
     alignItems: 'flex-end',
-    marginBottom: 10,
+    paddingTop: 20,
+    marginBottom: 20,
   },
   settingsButtonWrapper: {
     shadowColor: '#000',
@@ -605,7 +603,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    marginTop: 40,
     fontSize: 28,
     fontFamily: 'Margarine',
     color: '#FF9D00',

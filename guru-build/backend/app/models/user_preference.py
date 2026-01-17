@@ -29,6 +29,7 @@ class UserPreference(BaseModel):
     commute_start = Column(String)  # "HH:MM"
     commute_end = Column(String)  # "HH:MM"
     commute_duration = Column(String)  # Single selection
+    commute_method = Column(String, nullable=True)  # e.g. "Car", "Bus", "Train"
 
     # Chore preferences
     chore_time = Column(String)  # Single selection (e.g. Weekend Mornings)

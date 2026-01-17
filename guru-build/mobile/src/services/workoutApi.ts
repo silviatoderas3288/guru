@@ -1,11 +1,11 @@
 import axios from 'axios';
 import { GoogleAuthService } from './googleAuth';
+import { API_URL } from './apiConfig';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
-console.log('Workout API URL:', API_BASE_URL);
+console.log('Workout API URL:', API_URL);
 
 const workoutApi = axios.create({
-  baseURL: `${API_BASE_URL}/api/v1/workouts`,
+  baseURL: `${API_URL}/api/v1/workouts`,
 });
 
 // Add auth interceptor

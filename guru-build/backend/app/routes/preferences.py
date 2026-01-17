@@ -1,6 +1,6 @@
 """User preferences API routes."""
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
@@ -28,6 +28,7 @@ class PreferenceSchema(BaseModel):
     commute_start: Optional[str] = None
     commute_end: Optional[str] = None
     commute_duration: Optional[str] = None
+    commute_method: Optional[str] = None
     chore_time: Optional[str] = None
     chore_duration: Optional[str] = None
 
@@ -49,6 +50,7 @@ class PreferenceResponse(BaseModel):
     commute_start: Optional[str] = None
     commute_end: Optional[str] = None
     commute_duration: Optional[str] = None
+    commute_method: Optional[str] = None
     chore_time: Optional[str] = None
     chore_duration: Optional[str] = None
 
@@ -56,13 +58,23 @@ class PreferenceResponse(BaseModel):
         from_attributes = True
 
 
+def get_or_create_user(db: Session, email: str) -> User:
+    """Get existing user or create a new one."""
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        # Auto-create user for OAuth-based apps
+        user = User(email=email)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return user
+
+
 @router.get("/api/preferences/{email}", response_model=PreferenceResponse)
 async def get_preferences(email: str, db: Session = Depends(get_db)):
     """Get user preferences by email."""
-    # Find user by email
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    # Find or create user by email
+    user = get_or_create_user(db, email)
 
     # Get or create preferences
     preferences = db.query(UserPreference).filter(
@@ -87,6 +99,7 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
             commute_start=None,
             commute_end=None,
             commute_duration=None,
+            commute_method=None,
             chore_time=None,
             chore_duration=None
         )
@@ -107,6 +120,7 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
         commute_start=preferences.commute_start,
         commute_end=preferences.commute_end,
         commute_duration=preferences.commute_duration,
+        commute_method=preferences.commute_method,
         chore_time=preferences.chore_time,
         chore_duration=preferences.chore_duration
     )
@@ -118,10 +132,8 @@ async def save_preferences(
     db: Session = Depends(get_db)
 ):
     """Save or update user preferences."""
-    # Find user by email
-    user = db.query(User).filter(User.email == preference_data.email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    # Find or create user by email
+    user = get_or_create_user(db, preference_data.email)
 
     # Get or create preferences
     preferences = db.query(UserPreference).filter(
@@ -145,6 +157,7 @@ async def save_preferences(
         preferences.commute_start = preference_data.commute_start
         preferences.commute_end = preference_data.commute_end
         preferences.commute_duration = preference_data.commute_duration
+        preferences.commute_method = preference_data.commute_method
         preferences.chore_time = preference_data.chore_time
         preferences.chore_duration = preference_data.chore_duration
     else:
@@ -166,6 +179,7 @@ async def save_preferences(
             commute_start=preference_data.commute_start,
             commute_end=preference_data.commute_end,
             commute_duration=preference_data.commute_duration,
+            commute_method=preference_data.commute_method,
             chore_time=preference_data.chore_time,
             chore_duration=preference_data.chore_duration
         )
@@ -192,6 +206,7 @@ async def save_preferences(
             commute_start=preferences.commute_start,
             commute_end=preferences.commute_end,
             commute_duration=preferences.commute_duration,
+            commute_method=preferences.commute_method,
             chore_time=preferences.chore_time,
             chore_duration=preferences.chore_duration
         )

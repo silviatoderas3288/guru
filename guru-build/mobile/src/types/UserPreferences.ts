@@ -5,14 +5,16 @@ export interface UserPreferences {
   workoutTypes: string[];
   workoutDuration: string[];
   workoutFrequency: string[];
+  workoutDays: string[];
+  workoutPreferredTime: string[];
   bedTime: string[];
   focusTimeStart: string[];
   focusTimeEnd: string[];
   blockedApps: string[];
-  // New fields requested
   commuteStartTime: string[];
   commuteEndTime: string[];
   commuteMethod: string[];
+  commuteDuration: string[];
   choreTime: string[];
   choreDuration: string[];
 }

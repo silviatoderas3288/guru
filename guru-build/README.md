@@ -2,6 +2,32 @@
 
 A smart personal assistant that manages your time, promotes healthy habits, and provides personalized content recommendations.
 
+## 🤖 AI Scheduling Agent Implementation
+
+We have laid the groundwork for the AI Scheduling Agent. The database models and frontend settings are ready.
+
+### 📚 Documentation
+- **[Detailed Implementation Plan](AI_SCHEDULING_AGENT_PLAN.md)**: Read this for architecture and logic details.
+- **[Backend Setup](backend/README.md)**: Instructions for running the API.
+- **[Mobile Setup](mobile/README.md)**: Instructions for running the React Native app.
+
+### 🚀 How to Start Implementing the Agent
+
+1.  **Verify Data Structures:**
+    The `UserPreference` model in `backend/app/models/user_preference.py` is the source of truth for user constraints (workouts, commutes, chores).
+    
+2.  **Create the Logic Service:**
+    Create a new file `backend/app/services/scheduling_agent.py`.
+    *   **Input:** `UserPreference` data + Google Calendar Events.
+    *   **Output:** A list of suggested `TimeBlocks` or `CalendarEvents`.
+    *   **Logic:** Implement the constraint solving described in Phase 3 of the [Plan](AI_SCHEDULING_AGENT_PLAN.md).
+
+3.  **Expose the API:**
+    Add a new route in `backend/app/routes/schedule_agent.py` that accepts a POST request to trigger generation.
+
+4.  **Connect the UI:**
+    The "Schedule" button in `WorkoutScreen.tsx` is ready to be wired up to your new API endpoint.
+
 ---
 
 ## 📋 Table of Contents

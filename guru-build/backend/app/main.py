@@ -1,7 +1,22 @@
 """Main FastAPI application."""
 
+# Load environment variables first, before any other imports
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Get the backend directory (parent of app directory)
+backend_dir = Path(__file__).resolve().parent.parent
+env_path = backend_dir / ".env"
+load_dotenv(dotenv_path=env_path)
+
+import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Guru API",
@@ -18,6 +33,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    """Log available AI providers on startup."""
+    claude_key = os.getenv("ANTHROPIC_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    
+    logger.info("--- AI Provider Status ---")
+    logger.info(f"Anthropic (Claude): {'Available' if claude_key else 'Not Configured'}")
+    logger.info(f"OpenAI (GPT-4): {'Available' if openai_key else 'Not Configured'}")
+    logger.info("--------------------------")
 
 @app.get("/")
 async def root():
@@ -36,7 +61,7 @@ async def health_check():
 
 
 # Import and include routers
-from app.routes import calendar, bingo, journal, list_items, preferences, spotify, podcasts, workouts
+from app.routes import calendar, bingo, journal, list_items, preferences, spotify, podcasts, workouts, schedule_agent
 
 app.include_router(calendar.router, prefix="/api/v1/calendar", tags=["calendar"])
 app.include_router(bingo.router, prefix="/api/v1/bingo", tags=["bingo"])
@@ -46,6 +71,7 @@ app.include_router(preferences.router, tags=["preferences"])
 app.include_router(spotify.router, prefix="/api/v1/spotify", tags=["spotify"])
 app.include_router(podcasts.router, prefix="/api/v1/podcasts", tags=["podcasts"])
 app.include_router(workouts.router, prefix="/api/v1/workouts", tags=["workouts"])
+app.include_router(schedule_agent.router, prefix="/api/v1/schedule/agent", tags=["schedule-agent"])
 
 # TODO: Add more routers as they are implemented
 # from app.routes import tasks, media, resolutions, settings

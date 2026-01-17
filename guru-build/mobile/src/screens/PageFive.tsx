@@ -400,32 +400,12 @@ const collapsibleStyles = StyleSheet.create({
 });
 
 export const PageFive: React.FC = () => {
-  const { toggleSettingsModal } = usePreferencesStore();
+  const { toggleSettingsModal, preferences, updatePreference, fetchPreferences, loading } = usePreferencesStore();
   const [user, setUser] = useState<GoogleUser | null>(null);
-  const [preferences, setPreferences] = useState<UserPreferences>({
-    podcastTopics: [],
-    podcastLength: [],
-    notifications: [],
-    workoutTypes: [],
-    workoutDuration: [],
-    workoutFrequency: [],
-    workoutDays: [],
-    workoutPreferredTime: [],
-    bedTime: [],
-    focusTimeStart: [],
-    focusTimeEnd: [],
-    blockedApps: [],
-    commuteStart: [],
-    commuteEnd: [],
-    commuteDuration: [],
-    choreTime: [],
-    choreDuration: [],
-  });
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadUserData();
-    loadPreferences();
+    fetchPreferences();
   }, []);
 
   const loadUserData = async () => {
@@ -435,98 +415,6 @@ export const PageFive: React.FC = () => {
     } catch (error) {
       console.error('Error loading user data:', error);
     }
-  };
-
-  const loadPreferences = async () => {
-    try {
-      setLoading(true);
-      const storedUser = await GoogleAuthService.getStoredUser();
-      if (!storedUser?.email) {
-        setLoading(false);
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/preferences/${storedUser.email}`);
-      if (response.ok) {
-        const data = await response.json();
-        setPreferences({
-          podcastTopics: data.podcast_topics || [],
-          podcastLength: data.podcast_length ? [data.podcast_length] : [],
-          notifications: data.notifications ? [data.notifications] : [],
-          workoutTypes: data.workout_types || [],
-          workoutDuration: data.workout_duration ? [data.workout_duration] : [],
-          workoutFrequency: data.workout_frequency ? [data.workout_frequency] : [],
-          workoutDays: data.workout_days || [],
-          workoutPreferredTime: data.workout_preferred_time ? [data.workout_preferred_time] : [],
-          bedTime: data.bed_time ? [data.bed_time] : [],
-          focusTimeStart: data.focus_time_start ? [data.focus_time_start] : [],
-          focusTimeEnd: data.focus_time_end ? [data.focus_time_end] : [],
-          blockedApps: data.blocked_apps || [],
-          commuteStart: data.commute_start ? [data.commute_start] : [],
-          commuteEnd: data.commute_end ? [data.commute_end] : [],
-          commuteDuration: data.commute_duration ? [data.commute_duration] : [],
-          choreTime: data.chore_time ? [data.chore_time] : [],
-          choreDuration: data.chore_duration ? [data.chore_duration] : [],
-        });
-      }
-    } catch (error) {
-      console.error('Error loading preferences:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const savePreferences = async (updatedPreferences: UserPreferences) => {
-    try {
-      const storedUser = await GoogleAuthService.getStoredUser();
-      if (!storedUser?.email) {
-        Alert.alert('Error', 'Please sign in to save preferences');
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/preferences`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: storedUser.email,
-          podcast_topics: updatedPreferences.podcastTopics,
-          podcast_length: updatedPreferences.podcastLength[0] || null,
-          notifications: updatedPreferences.notifications[0] || null,
-          workout_types: updatedPreferences.workoutTypes,
-          workout_duration: updatedPreferences.workoutDuration[0] || null,
-          workout_frequency: updatedPreferences.workoutFrequency[0] || null,
-          workout_days: updatedPreferences.workoutDays,
-          workout_preferred_time: updatedPreferences.workoutPreferredTime[0] || null,
-          bed_time: updatedPreferences.bedTime[0] || null,
-          focus_time_start: updatedPreferences.focusTimeStart[0] || null,
-          focus_time_end: updatedPreferences.focusTimeEnd[0] || null,
-          blocked_apps: updatedPreferences.blockedApps,
-          commute_start: updatedPreferences.commuteStart[0] || null,
-          commute_end: updatedPreferences.commuteEnd[0] || null,
-          commute_duration: updatedPreferences.commuteDuration[0] || null,
-          chore_time: updatedPreferences.choreTime[0] || null,
-          chore_duration: updatedPreferences.choreDuration[0] || null,
-        }),
-      });
-
-      if (response.ok) {
-        // Optional: show success message or just silent save
-        // Alert.alert('Success', 'Preferences saved successfully!');
-      } else {
-        Alert.alert('Error', 'Failed to save preferences');
-      }
-    } catch (error) {
-      console.error('Error saving preferences:', error);
-      Alert.alert('Error', 'Failed to save preferences');
-    }
-  };
-
-  const updatePreference = (key: keyof UserPreferences, value: string[]) => {
-    const updatedPreferences = { ...preferences, [key]: value };
-    setPreferences(updatedPreferences);
-    savePreferences(updatedPreferences);
   };
 
   const handleSignOut = async () => {
@@ -694,10 +582,10 @@ export const PageFive: React.FC = () => {
           <CollapsibleSection title="Commute Preferences" transparent={true}>
             <TimeRangeDropdown
               label="Commute Time"
-              startTime={preferences.commuteStart[0] || ''}
-              endTime={preferences.commuteEnd[0] || ''}
-              onStartTimeChange={(time) => updatePreference('commuteStart', [time])}
-              onEndTimeChange={(time) => updatePreference('commuteEnd', [time])}
+              startTime={preferences.commuteStartTime[0] || ''}
+              endTime={preferences.commuteEndTime[0] || ''}
+              onStartTimeChange={(time) => updatePreference('commuteStartTime', [time])}
+              onEndTimeChange={(time) => updatePreference('commuteEndTime', [time])}
               startOptions={['06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '04:00 PM', '05:00 PM', '06:00 PM']}
               endOptions={['07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '05:00 PM', '06:00 PM', '07:00 PM']}
               labelColor="#4D5AEE"
@@ -785,7 +673,6 @@ const styles = StyleSheet.create({
   header: {
     width: '100%',
     alignItems: 'flex-end',
-    paddingRight: 16,
     paddingTop: 20,
     marginBottom: 20,
   },
