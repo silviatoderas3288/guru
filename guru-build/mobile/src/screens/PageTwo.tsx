@@ -775,13 +775,6 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
 
       // Refresh calendar events
       await loadCalendarEvents();
-
-      const deletedItemName = associatedGoal?.text || associatedTodo?.text;
-      if (deletedItemName) {
-        Alert.alert('Success', `Calendar event and "${deletedItemName}" deleted`);
-      } else {
-        Alert.alert('Success', 'Calendar event deleted');
-      }
     } catch (error) {
       console.error('Error deleting calendar event:', error);
       Alert.alert('Error', 'Failed to delete calendar event');

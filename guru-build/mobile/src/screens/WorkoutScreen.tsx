@@ -22,7 +22,7 @@ import { ListItemApiService } from '../services/listItemApi';
 import { WorkoutApiService, Workout, WorkoutSection, Exercise } from '../services/workoutApi';
 import { usePreferencesStore } from '../store/usePreferencesStore';
 import schedulingAgentApi, { WorkoutScheduleResponse, ScheduledWorkout } from '../services/schedulingAgentApi';
-import { CalendarApiService } from '../services/calendarApi';
+import { CalendarApiService, CalendarEvent } from '../services/calendarApi';
 
 const SettingsIcon = () => (
   <Svg width="19" height="20" viewBox="0 0 19 20" fill="none">
@@ -288,17 +288,48 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
 
     try {
       let addedCount = 0;
+      
+      // Fetch existing events for the week to check for duplicates
+      const weekStart = new Date(weekStartDate);
+      const weekEnd = new Date(weekStartDate);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      
+      const existingEvents = await CalendarApiService.getCalendarEvents(weekStart, weekEnd);
+      
+      // Track titles added in this batch to handle multiple same-name workouts in one generation
+      const addedTitles: string[] = [];
 
       for (const workout of aiScheduleResult.scheduledWorkouts) {
         // Only add to calendar if not already scheduled or if rescheduled
         if (!workout.calendar_event_id || workout.is_rescheduled) {
           try {
+            // Check for duplicates (existing in calendar OR added in this batch)
+            const baseTitle = workout.title;
+            let titleToUse = baseTitle;
+            
+            // Filter events that match the base title (e.g. "Leg Day", "Leg Day - Day 2")
+            const matchingEvents = existingEvents.filter(e => 
+              e.summary === baseTitle || e.summary.startsWith(`${baseTitle} - Day `)
+            );
+            
+            const matchingAdded = addedTitles.filter(t => 
+              t === baseTitle || t.startsWith(`${baseTitle} - Day `)
+            );
+            
+            const totalMatches = matchingEvents.length + matchingAdded.length;
+            
+            if (totalMatches > 0) {
+              titleToUse = `${baseTitle} - Day ${totalMatches + 1}`;
+            }
+            
             await CalendarApiService.createCalendarEvent({
-              summary: workout.title,
+              summary: titleToUse,
               description: workout.exercises.join('\n') || workout.description || 'Workout scheduled by AI',
               start_time: workout.start_time,
               end_time: workout.end_time,
             });
+            
+            addedTitles.push(titleToUse);
             addedCount++;
           } catch (calError) {
             console.error('Failed to create calendar event for:', workout.title, calError);

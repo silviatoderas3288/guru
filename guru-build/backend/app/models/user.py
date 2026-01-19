@@ -34,6 +34,8 @@ class User(BaseModel):
     schedule_suggestions = relationship("ScheduleSuggestion", back_populates="user", cascade="all, delete-orphan")
     task_feedback = relationship("TaskCompletionFeedback", back_populates="user", cascade="all, delete-orphan")
     schedule_history = relationship("ScheduleHistory", back_populates="user", cascade="all, delete-orphan")
+    saved_podcasts = relationship("SavedPodcast", back_populates="user", cascade="all, delete-orphan")
+    saved_episodes = relationship("SavedEpisode", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email})>"
