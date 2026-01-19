@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert, Modal, ImageBackground, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert, Modal, ImageBackground, Pressable, Platform, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { GoogleAuthService, GoogleUser } from '../services/googleAuth';
 import { PreferenceDropdown } from '../components/PreferenceDropdown';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePreferencesStore } from '../store/usePreferencesStore';
+import schedulingAgentApi, { GenerateScheduleResponse, ScheduledEvent } from '../services/schedulingAgentApi';
+import { CalendarApiService } from '../services/calendarApi';
+import { ListItemApiService, ListItemType } from '../services/listItemApi';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -399,9 +403,555 @@ const collapsibleStyles = StyleSheet.create({
   },
 });
 
+// Text Input Preference Component
+interface TextInputPreferenceProps {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder?: string;
+  suffix?: string;
+  keyboardType?: 'default' | 'numeric';
+  labelColor?: string;
+}
+
+const TextInputPreference: React.FC<TextInputPreferenceProps> = ({
+  label,
+  value,
+  onChangeText,
+  placeholder = '',
+  suffix = '',
+  keyboardType = 'default',
+  labelColor = '#4D5AEE'
+}) => {
+  return (
+    <View style={textInputStyles.container}>
+      <View style={textInputStyles.labelContainer}>
+        <Text style={[textInputStyles.label, { color: labelColor }]}>{label}</Text>
+        <Image
+          source={require('../../assets/under_pref.png')}
+          style={textInputStyles.underline}
+          resizeMode="contain"
+        />
+      </View>
+      <ImageBackground
+        source={require('../../assets/box.png')}
+        style={textInputStyles.inputBox}
+        resizeMode="stretch"
+      >
+        <TextInput
+          style={textInputStyles.input}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor="#999"
+          keyboardType={keyboardType}
+        />
+        {suffix ? <Text style={textInputStyles.suffix}>{suffix}</Text> : null}
+      </ImageBackground>
+    </View>
+  );
+};
+
+const textInputStyles = StyleSheet.create({
+  container: {
+    marginBottom: 20,
+  },
+  labelContainer: {
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 4,
+  },
+  underline: {
+    width: 150,
+    height: 15,
+  },
+  inputBox: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  input: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+  },
+  suffix: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#999',
+    marginLeft: 8,
+  },
+});
+
+// Time Input with Dropdown + Custom Input Component
+interface TimeInputDropdownProps {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  options: string[];
+  labelColor?: string;
+}
+
+const TimeInputDropdown: React.FC<TimeInputDropdownProps> = ({
+  label,
+  value,
+  onValueChange,
+  options,
+  labelColor = '#4D5AEE'
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isCustom, setIsCustom] = useState(false);
+  const [customValue, setCustomValue] = useState('');
+
+  const handleSelectOption = (option: string) => {
+    if (option === 'Custom') {
+      setIsCustom(true);
+    } else {
+      onValueChange(option);
+      setIsOpen(false);
+      setIsCustom(false);
+    }
+  };
+
+  const handleCustomSubmit = () => {
+    if (customValue.trim()) {
+      onValueChange(customValue.trim());
+    }
+    setIsOpen(false);
+    setIsCustom(false);
+    setCustomValue('');
+  };
+
+  const displayValue = value || `Select ${label.toLowerCase()}`;
+
+  return (
+    <View style={timeInputStyles.container}>
+      <View style={timeInputStyles.labelContainer}>
+        <Text style={[timeInputStyles.label, { color: labelColor }]}>{label}</Text>
+        <Image
+          source={require('../../assets/under_pref.png')}
+          style={timeInputStyles.underline}
+          resizeMode="contain"
+        />
+      </View>
+
+      <TouchableOpacity onPress={() => setIsOpen(true)}>
+        <ImageBackground
+          source={require('../../assets/box.png')}
+          style={timeInputStyles.dropdownBox}
+          resizeMode="stretch"
+        >
+          <Text style={timeInputStyles.selectedText} numberOfLines={1}>
+            {displayValue}
+          </Text>
+          <Image
+            source={require('../../assets/arrow.png')}
+            style={[
+              timeInputStyles.arrow,
+              isOpen && timeInputStyles.arrowRotated
+            ]}
+            resizeMode="contain"
+          />
+        </ImageBackground>
+      </TouchableOpacity>
+
+      <Modal
+        visible={isOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => { setIsOpen(false); setIsCustom(false); }}
+      >
+        <Pressable
+          style={timeInputStyles.modalOverlay}
+          onPress={() => { setIsOpen(false); setIsCustom(false); }}
+        >
+          <Pressable style={timeInputStyles.modalContent}>
+            {isCustom ? (
+              <View style={timeInputStyles.customInputContainer}>
+                <Text style={timeInputStyles.customInputLabel}>Enter custom time (e.g. 7:30 AM)</Text>
+                <TextInput
+                  style={timeInputStyles.customInput}
+                  value={customValue}
+                  onChangeText={setCustomValue}
+                  placeholder="e.g. 7:30 AM"
+                  placeholderTextColor="#999"
+                  autoFocus
+                />
+                <View style={timeInputStyles.customButtonsRow}>
+                  <TouchableOpacity
+                    style={timeInputStyles.backButton}
+                    onPress={() => setIsCustom(false)}
+                  >
+                    <Text style={timeInputStyles.backButtonText}>Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={timeInputStyles.submitButton}
+                    onPress={handleCustomSubmit}
+                  >
+                    <Text style={timeInputStyles.submitButtonText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <>
+                <ScrollView style={timeInputStyles.optionsList}>
+                  {[...options, 'Custom'].map((option) => {
+                    const isSelected = value === option;
+                    return (
+                      <TouchableOpacity
+                        key={option}
+                        style={[
+                          timeInputStyles.optionItem,
+                          isSelected && timeInputStyles.optionItemSelected
+                        ]}
+                        onPress={() => handleSelectOption(option)}
+                      >
+                        <Text style={[
+                          timeInputStyles.optionText,
+                          isSelected && timeInputStyles.optionTextSelected
+                        ]}>
+                          {option}
+                        </Text>
+                        {isSelected && (
+                          <Text style={timeInputStyles.checkmark}>✓</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+                <TouchableOpacity
+                  style={timeInputStyles.doneButton}
+                  onPress={() => setIsOpen(false)}
+                >
+                  <Text style={timeInputStyles.doneButtonText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+};
+
+const timeInputStyles = StyleSheet.create({
+  container: {
+    marginBottom: 20,
+  },
+  labelContainer: {
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 4,
+  },
+  underline: {
+    width: 150,
+    height: 15,
+  },
+  dropdownBox: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+  },
+  selectedText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    marginRight: 10,
+  },
+  arrow: {
+    width: 20,
+    height: 20,
+  },
+  arrowRotated: {
+    transform: [{ rotate: '180deg' }],
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'rgba(77, 90, 238, 0.70)',
+    borderRadius: 20,
+    padding: 20,
+    width: '85%',
+    maxHeight: '60%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  optionsList: {
+    maxHeight: 300,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  optionItemSelected: {
+    backgroundColor: 'transparent',
+  },
+  optionText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#FFF',
+  },
+  optionTextSelected: {
+    color: '#FF9D00',
+    fontWeight: '600',
+  },
+  checkmark: {
+    fontSize: 20,
+    color: '#FF9D00',
+    fontWeight: 'bold',
+  },
+  doneButton: {
+    backgroundColor: '#FF9D00',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  doneButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  customInputContainer: {
+    padding: 10,
+  },
+  customInputLabel: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#FFF',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  customInput: {
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    padding: 15,
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    marginBottom: 15,
+  },
+  customButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  backButton: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    paddingVertical: 12,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  backButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+  },
+  submitButton: {
+    flex: 1,
+    backgroundColor: '#FF9D00',
+    paddingVertical: 12,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  submitButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+});
+
+// Duration Input Component (Hours and Minutes)
+interface DurationInputProps {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  labelColor?: string;
+}
+
+const DurationInput: React.FC<DurationInputProps> = ({
+  label,
+  value,
+  onValueChange,
+  labelColor = '#4D5AEE'
+}) => {
+  // Parse existing value (format: "Xh Ym" or "X hours Y minutes" or just numbers)
+  const parseValue = (val: string) => {
+    if (!val) return { hours: '', minutes: '' };
+
+    // Try to parse "Xh Ym" format
+    const hMatch = val.match(/(\d+)\s*h/i);
+    const mMatch = val.match(/(\d+)\s*m/i);
+
+    if (hMatch || mMatch) {
+      return {
+        hours: hMatch ? hMatch[1] : '',
+        minutes: mMatch ? mMatch[1] : ''
+      };
+    }
+
+    // If just a number, assume it's minutes
+    const numMatch = val.match(/^(\d+)$/);
+    if (numMatch) {
+      const totalMins = parseInt(numMatch[1]);
+      if (totalMins >= 60) {
+        return {
+          hours: Math.floor(totalMins / 60).toString(),
+          minutes: (totalMins % 60).toString()
+        };
+      }
+      return { hours: '', minutes: numMatch[1] };
+    }
+
+    return { hours: '', minutes: '' };
+  };
+
+  const { hours, minutes } = parseValue(value);
+  const [hoursValue, setHoursValue] = useState(hours);
+  const [minutesValue, setMinutesValue] = useState(minutes);
+
+  const updateValue = (newHours: string, newMinutes: string) => {
+    setHoursValue(newHours);
+    setMinutesValue(newMinutes);
+
+    const parts = [];
+    if (newHours && newHours !== '0') parts.push(`${newHours}h`);
+    if (newMinutes && newMinutes !== '0') parts.push(`${newMinutes}m`);
+
+    onValueChange(parts.join(' ') || '');
+  };
+
+  return (
+    <View style={durationStyles.container}>
+      <View style={durationStyles.labelContainer}>
+        <Text style={[durationStyles.label, { color: labelColor }]}>{label}</Text>
+        <Image
+          source={require('../../assets/under_pref.png')}
+          style={durationStyles.underline}
+          resizeMode="contain"
+        />
+      </View>
+      <View style={durationStyles.inputRow}>
+        <ImageBackground
+          source={require('../../assets/box.png')}
+          style={durationStyles.inputBox}
+          resizeMode="stretch"
+        >
+          <TextInput
+            style={durationStyles.input}
+            value={hoursValue}
+            onChangeText={(text) => updateValue(text.replace(/[^0-9]/g, ''), minutesValue)}
+            placeholder="0"
+            placeholderTextColor="#999"
+            keyboardType="numeric"
+            maxLength={2}
+          />
+          <Text style={durationStyles.unitLabel}>hours</Text>
+        </ImageBackground>
+        <ImageBackground
+          source={require('../../assets/box.png')}
+          style={durationStyles.inputBox}
+          resizeMode="stretch"
+        >
+          <TextInput
+            style={durationStyles.input}
+            value={minutesValue}
+            onChangeText={(text) => updateValue(hoursValue, text.replace(/[^0-9]/g, ''))}
+            placeholder="0"
+            placeholderTextColor="#999"
+            keyboardType="numeric"
+            maxLength={2}
+          />
+          <Text style={durationStyles.unitLabel}>min</Text>
+        </ImageBackground>
+      </View>
+    </View>
+  );
+};
+
+const durationStyles = StyleSheet.create({
+  container: {
+    marginBottom: 20,
+  },
+  labelContainer: {
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 4,
+  },
+  underline: {
+    width: 150,
+    height: 15,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  inputBox: {
+    flex: 1,
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 15,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    textAlign: 'center',
+  },
+  unitLabel: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#999',
+    marginLeft: 5,
+  },
+});
+
 export const PageFive: React.FC = () => {
   const { toggleSettingsModal, preferences, updatePreference, fetchPreferences, loading } = usePreferencesStore();
   const [user, setUser] = useState<GoogleUser | null>(null);
+  
+  // AI Schedule Modal states
+  const [showAIScheduleModal, setShowAIScheduleModal] = useState(false);
+  const [aiScheduleLoading, setAiScheduleLoading] = useState(false);
+  const [aiScheduleResult, setAiScheduleResult] = useState<GenerateScheduleResponse | null>(null);
+  const [weekStartDate, setWeekStartDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -414,6 +964,109 @@ export const PageFive: React.FC = () => {
       setUser(storedUser);
     } catch (error) {
       console.error('Error loading user data:', error);
+    }
+  };
+
+  const formatTime = (isoString: string) => {
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return isoString;
+    }
+  };
+
+  const handleAISchedule = async (dateObj?: Date) => {
+    // If a date is provided, use it. Otherwise use the current state or default.
+    const targetDate = dateObj || weekStartDate;
+    
+    // Ensure we are using the correct date string format (YYYY-MM-DD)
+    const dateString = targetDate.toISOString().split('T')[0];
+
+    setAiScheduleLoading(true);
+    setShowAIScheduleModal(true);
+
+    try {
+      const result = await schedulingAgentApi.generateSchedule({
+        weekStartDate: dateString,
+        forceRegenerate: true,
+      });
+      setAiScheduleResult(result);
+    } catch (error) {
+      console.error('Error generating AI schedule:', error);
+      Alert.alert(
+        'AI Scheduling Error',
+        'Failed to generate schedule. Please make sure you have set your preferences in Settings.'
+      );
+      setShowAIScheduleModal(false);
+    } finally {
+      setAiScheduleLoading(false);
+    }
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    const currentDate = selectedDate || weekStartDate;
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    setWeekStartDate(currentDate);
+    
+    // If the user selects a date, we could optionally auto-regenerate or wait for them to click "Regenerate"
+    // Let's auto-regenerate for a smoother experience
+    if (selectedDate && showAIScheduleModal) {
+      handleAISchedule(selectedDate);
+    }
+  };
+
+  const handleAcceptSchedule = async () => {
+    if (!aiScheduleResult?.scheduledEvents) return;
+
+    try {
+      setAiScheduleLoading(true);
+      const events = aiScheduleResult.scheduledEvents;
+      let addedCount = 0;
+
+      for (const event of events) {
+        // 1. Create Weekly Goal
+        const newItem = await ListItemApiService.createListItem({
+          text: event.title,
+          completed: false,
+          item_type: ListItemType.WEEKLY_GOAL,
+        });
+
+        // 2. Create Calendar Event (if times are present)
+        if (event.start_time && event.end_time) {
+          try {
+            const calendarEvent = await CalendarApiService.createCalendarEvent({
+              summary: event.title,
+              description: event.description || 'Generated by AI Scheduler',
+              start_time: event.start_time,
+              end_time: event.end_time,
+              // Map AI colors or priority to Google Calendar colors if needed
+            });
+
+            // 3. Link Weekly Goal to Calendar Event
+            await ListItemApiService.updateListItem(newItem.id, {
+              calendar_event_id: calendarEvent.id,
+            });
+          } catch (calError) {
+            console.error('Failed to create calendar event for:', event.title, calError);
+            // Continue even if calendar sync fails
+          }
+        }
+        addedCount++;
+      }
+
+      setShowAIScheduleModal(false);
+      Alert.alert(
+        'Success',
+        `${addedCount} events added to your Weekly Goals and Calendar!`
+      );
+    } catch (error) {
+      console.error('Error accepting schedule:', error);
+      Alert.alert('Error', 'Failed to save schedule. Please try again.');
+    } finally {
+      setAiScheduleLoading(false);
     }
   };
 
@@ -610,18 +1263,24 @@ export const PageFive: React.FC = () => {
               multiSelect={false}
               labelColor="#4D5AEE"
             />
-            <PreferenceDropdown
+            <DurationInput
               label="Duration"
-              options={['15 min', '30 min', '45 min', '1 hour', '2 hours']}
-              selectedOptions={preferences.choreDuration}
-              onSelectionChange={(selected) => updatePreference('choreDuration', selected)}
+              value={preferences.choreDuration[0] || ''}
+              onValueChange={(value) => updatePreference('choreDuration', [value])}
+              labelColor="#4D5AEE"
+            />
+            <PreferenceDropdown
+              label="Distribution"
+              options={['Distributed throughout the week', 'All in one session']}
+              selectedOptions={preferences.choreDistribution}
+              onSelectionChange={(selected) => updatePreference('choreDistribution', selected)}
               multiSelect={false}
               labelColor="#4D5AEE"
             />
           </CollapsibleSection>
 
-          {/* Focus & Schedule */}
-          <CollapsibleSection title="Focus & Schedule" transparent={true}>
+          {/* Sleep Schedule */}
+          <CollapsibleSection title="Sleep Schedule" transparent={true}>
             <PreferenceDropdown
               label="Bed Time"
               options={['09:00 PM', '09:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM', '12:30 AM']}
@@ -630,6 +1289,26 @@ export const PageFive: React.FC = () => {
               multiSelect={false}
               labelColor="#4D5AEE"
             />
+            <TimeInputDropdown
+              label="Wake Time"
+              options={['05:00 AM', '05:30 AM', '06:00 AM', '06:30 AM', '07:00 AM', '07:30 AM', '08:00 AM', '08:30 AM', '09:00 AM']}
+              value={preferences.wakeTime[0] || ''}
+              onValueChange={(value) => updatePreference('wakeTime', [value])}
+              labelColor="#4D5AEE"
+            />
+            <TextInputPreference
+              label="Sleep Hours"
+              value={preferences.sleepHours[0] || ''}
+              onChangeText={(text) => updatePreference('sleepHours', [text])}
+              placeholder="e.g. 8"
+              suffix="hours"
+              keyboardType="numeric"
+              labelColor="#4D5AEE"
+            />
+          </CollapsibleSection>
+
+          {/* Focus Time (App Blocking) */}
+          <CollapsibleSection title="Focus Time (App Blocking)" transparent={true}>
             <TimeRangeDropdown
               label="Focus Time"
               startTime={preferences.focusTimeStart[0] || ''}
@@ -647,7 +1326,37 @@ export const PageFive: React.FC = () => {
               labelColor="#4D5AEE"
             />
           </CollapsibleSection>
+
+          {/* Meal Preferences */}
+          <CollapsibleSection title="Meal Preferences" transparent={true}>
+            <TextInputPreference
+              label="Meal Duration (minutes)"
+              value={preferences.mealDuration[0] || ''}
+              onChangeText={(text) => updatePreference('mealDuration', [text])}
+              placeholder="e.g. 30"
+              suffix="min"
+              keyboardType="numeric"
+              labelColor="#4D5AEE"
+            />
+          </CollapsibleSection>
         </View>
+
+        {/* AI Generate Schedule Button */}
+        <TouchableOpacity style={styles.aiScheduleButton} onPress={() => handleAISchedule()}>
+          <LinearGradient
+            colors={['#FF9D00', '#4D5AEE']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.aiButtonGradient}
+          >
+             <Image
+              source={require('../../assets/ai.png')}
+              style={styles.aiButtonIcon}
+              resizeMode="contain"
+            />
+            <Text style={styles.aiButtonText}>Generate Schedule</Text>
+          </LinearGradient>
+        </TouchableOpacity>
 
         {/* Sign Out Button */}
         <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
@@ -656,6 +1365,132 @@ export const PageFive: React.FC = () => {
 
         <View style={styles.spacer} />
       </ScrollView>
+
+      {/* AI Schedule Result Modal */}
+      <Modal
+        visible={showAIScheduleModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAIScheduleModal(false)}
+      >
+        <View style={styles.aiModalOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setShowAIScheduleModal(false)}
+          />
+          <View style={styles.aiModalCard}>
+            <ScrollView
+              style={styles.aiScheduleScrollView}
+              contentContainerStyle={styles.aiScheduleScrollContent}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Date Selection Header */}
+              <View style={styles.dateSelectionHeader}>
+                <Text style={styles.dateLabel}>Week Starting:</Text>
+                <TouchableOpacity onPress={() => setShowDatePicker(true)}>
+                  <Text style={styles.dateValue}>
+                    {weekStartDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              
+              {showDatePicker && (
+                <DateTimePicker
+                  value={weekStartDate}
+                  mode="date"
+                  display="default"
+                  onChange={handleDateChange}
+                />
+              )}
+
+              {aiScheduleLoading ? (
+                <View style={styles.aiLoadingContainer}>
+                  <Image
+                    source={require('../../assets/ai.png')}
+                    style={styles.aiLoadingIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.aiLoadingText}>AI is creating your schedule...</Text>
+                  <Text style={styles.aiLoadingSubtext}>
+                    Analyzing your preferences and calendar
+                  </Text>
+                </View>
+              ) : aiScheduleResult ? (
+                <>
+                  <View style={styles.aiScheduleHeader}>
+                    <Text style={styles.aiScheduleTitle}>Your AI Schedule</Text>
+                  </View>
+
+                  {aiScheduleResult.warnings?.length ? (
+                    <View style={styles.warningsContainer}>
+                      {aiScheduleResult.warnings.map((warning, index) => (
+                        <Text key={index} style={styles.warningText}>
+                          {warning.message}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : null}
+
+                  {aiScheduleResult.scheduledEvents?.length ? (
+                    Object.entries(
+                      aiScheduleResult.scheduledEvents.reduce((acc, event) => {
+                        const day = event.day || 'Unscheduled';
+                        if (!acc[day]) acc[day] = [];
+                        acc[day].push(event);
+                        return acc;
+                      }, {} as Record<string, ScheduledEvent[]>)
+                    ).map(([day, events]) => (
+                      <View key={day} style={styles.daySection}>
+                        <Text style={styles.dayHeader}>{day}</Text>
+                        {events.map((event, index) => (
+                          <View key={index} style={styles.scheduleEventItem}>
+                            <View style={styles.eventDetails}>
+                              <Text style={styles.eventTitle}>{event.title}</Text>
+                              <Text style={styles.eventTime}>
+                                {formatTime(event.start_time)} - {formatTime(event.end_time)}
+                              </Text>
+                              {event.description ? (
+                                <Text style={styles.eventDescription}>{event.description}</Text>
+                              ) : null}
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.noEventsText}>No events scheduled</Text>
+                  )}
+
+                  <View style={styles.aiButtonsRow}>
+                    <TouchableOpacity
+                      style={[styles.aiActionButton, styles.regenerateButton]}
+                      onPress={() => handleAISchedule()}
+                    >
+                      <Text style={styles.regenerateButtonText}>Regenerate</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.aiActionButton, styles.acceptButton]}
+                      onPress={handleAcceptSchedule}
+                    >
+                      <Text style={styles.acceptButtonText}>Accept</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : null}
+
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setShowAIScheduleModal(false)}
+              >
+                <Text style={styles.modalCloseText}>Close</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -780,5 +1615,227 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: 'Margarine',
     fontWeight: '700',
+  },
+  aiScheduleButton: {
+    width: 250,
+    marginTop: 20,
+    borderRadius: 25,
+    shadowColor: '#4D5AEE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  aiButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    gap: 10,
+  },
+  aiButtonIcon: {
+    width: 24,
+    height: 24,
+  },
+  aiButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  // AI Modal Styles
+  aiModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  aiModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    height: '80%',
+    backgroundColor: '#F7E8FF',
+    borderRadius: 22,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  aiScheduleScrollView: {
+    flex: 1,
+    width: '100%',
+  },
+  aiScheduleScrollContent: {
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 28,
+  },
+  aiLoadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  aiLoadingIcon: {
+    width: 60,
+    height: 60,
+    marginBottom: 20,
+  },
+  aiLoadingText: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  aiLoadingSubtext: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#666',
+    textAlign: 'center',
+  },
+  dateSelectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+    marginBottom: 10,
+  },
+  dateLabel: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#666',
+    marginRight: 8,
+  },
+  dateValue: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    textDecorationLine: 'underline',
+  },
+  aiScheduleHeader: {
+    paddingBottom: 12,
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
+  },
+  aiScheduleTitle: {
+    fontSize: 22,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    textAlign: 'center',
+  },
+  daySection: {
+    marginTop: 14,
+  },
+  dayHeader: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 10,
+  },
+  scheduleEventItem: {
+    backgroundColor: 'rgba(77, 90, 238, 0.85)',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  eventDetails: {
+    gap: 4,
+  },
+  eventTitle: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#ffffff', 
+  },
+  eventTime: {
+    fontSize: 13,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    opacity: 0.9,
+  },
+  eventDescription: {
+    fontSize: 13,
+    fontFamily: 'Margarine',
+    color: '#ffffff',
+    marginTop: 4,
+  },
+  warningsContainer: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,157,0,0.25)',
+  },
+  warningText: {
+    fontSize: 13,
+    fontFamily: 'Margarine',
+    color: '#A35A00',
+    marginBottom: 6,
+  },
+  noEventsText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+    fontStyle: 'italic',
+  },
+  aiButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  aiActionButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  regenerateButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(77,90,238,0.35)',
+  },
+  regenerateButtonText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+  },
+  acceptButton: {
+    backgroundColor: '#4D5AEE',
+  },
+  acceptButtonText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#FFF',
+  },
+  modalCloseButton: {
+    marginTop: 6,
+    paddingVertical: 10,
+    borderRadius: 16,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.06)',
+  },
+  modalCloseText: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#333',
   },
 });

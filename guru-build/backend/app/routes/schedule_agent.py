@@ -57,6 +57,7 @@ async def generate_schedule(
             week_start_date=request.weekStartDate,
             include_goals=request.includeGoals,
             force_regenerate=request.forceRegenerate,
+            modification_request=request.modificationRequest,
         )
         return result
     except Exception as e:

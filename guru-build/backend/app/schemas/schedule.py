@@ -56,6 +56,7 @@ class GenerateScheduleRequest(BaseModel):
     weekStartDate: date
     includeGoals: bool = True
     forceRegenerate: bool = False
+    modificationRequest: Optional[str] = None  # Natural language request to modify the schedule
 
 
 class TaskFeedback(BaseModel):

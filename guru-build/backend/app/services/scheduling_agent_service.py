@@ -107,6 +107,7 @@ class SchedulingAgentService:
         goals: List[ListItem],
         calendar_events: List[Dict[str, Any]],
         week_start: date,
+        modification_request: Optional[str] = None,
     ) -> str:
         """Build the prompt for Claude to generate a schedule."""
 
@@ -128,7 +129,11 @@ User Preferences:
 - Chore time: {preferences.chore_time or 'Not specified'}
 - Chore duration: {preferences.chore_duration or 'Not specified'}
 - Bed time: {preferences.bed_time or 'Not specified'}
-- Focus time: {preferences.focus_time_start or 'Not specified'} to {preferences.focus_time_end or 'Not specified'}
+- Wake time: {preferences.wake_time or 'Not specified'}
+- Sleep hours needed: {preferences.sleep_hours or 'Not specified'}
+- Chore distribution: {preferences.chore_distribution or 'Not specified'} (distributed = spread throughout week, one_session = all at once)
+- Meal duration: {preferences.meal_duration or 'Not specified'} minutes
+- Focus time: {preferences.focus_time_start or 'Not specified'} to {preferences.focus_time_end or 'Not specified'} (NOTE: Focus time is ONLY for app blocking, DO NOT add it to the calendar)
 - Blocked apps during focus: {preferences.blocked_apps or 'None'}
 """
 
@@ -159,6 +164,12 @@ Week starting: {week_start.strftime('%A, %B %d, %Y')}
 
 {events_text}
 
+{f'''USER MODIFICATION REQUEST:
+The user has requested the following modifications to their schedule:
+"{modification_request}"
+
+IMPORTANT: You MUST incorporate this modification request into the schedule. This takes priority over default scheduling logic.
+''' if modification_request else ''}
 INSTRUCTIONS:
 1. Create a balanced weekly schedule that includes:
    - Workouts on the user's preferred days and times
@@ -166,7 +177,7 @@ INSTRUCTIONS:
    - Commute times with podcast suggestions based on their interests
    - Focus time blocks for deep work
    - Chore time on their preferred schedule
-   - Breaks and meals at reasonable times
+   - Breaks and meals at reasonable times 
 
 2. IMPORTANT CONSTRAINTS:
    - NEVER schedule over important (high priority) or existing calendar events. you can rearrange them if they are marked as medium or low priority or if they do not have a deadline that the user marked 
@@ -212,6 +223,7 @@ Provide a complete schedule for the entire week. Be practical and consider energ
         week_start_date: date,
         include_goals: bool = True,
         force_regenerate: bool = False,
+        modification_request: Optional[str] = None,
     ) -> GenerateScheduleResponse:
         """
         Generate a new weekly schedule using Claude AI.
@@ -220,6 +232,7 @@ Provide a complete schedule for the entire week. Be practical and consider energ
             week_start_date: Start date of the week to schedule
             include_goals: Whether to include weekly goals in scheduling
             force_regenerate: Force regeneration even if schedule exists
+            modification_request: Natural language request to modify the schedule
 
         Returns:
             GenerateScheduleResponse with the AI-generated schedule
@@ -254,20 +267,20 @@ Provide a complete schedule for the entire week. Be practical and consider energ
         if self.anthropic_client:
             logger.info("Attempting generation with Claude (Anthropic)...")
             schedule_data = await self._generate_with_claude(
-                preferences, goals, calendar_events, week_start_date
+                preferences, goals, calendar_events, week_start_date, modification_request
             )
             if schedule_data:
                 algorithm = "claude-3-sonnet-20240229"
-        
+
         # 2. Try OpenAI (GPT-4o) if Claude failed or wasn't available
         if not schedule_data and self.openai_client:
             logger.info("Attempting generation with OpenAI (GPT-4o)...")
             schedule_data = await self._generate_with_openai(
-                preferences, goals, calendar_events, week_start_date
+                preferences, goals, calendar_events, week_start_date, modification_request
             )
             if schedule_data:
                 algorithm = "gpt-4o"
-        
+
         # 3. Fallback to rule-based if both AI options failed
         if not schedule_data:
             logger.warning("Using fallback rule-based scheduling (no API key or AI failure)")
@@ -301,10 +314,11 @@ Provide a complete schedule for the entire week. Be practical and consider energ
         goals: List[ListItem],
         calendar_events: List[Dict[str, Any]],
         week_start: date,
+        modification_request: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate schedule using Claude API."""
         logger.info("Building prompt for Claude...")
-        prompt = self._build_scheduling_prompt(preferences, goals, calendar_events, week_start)
+        prompt = self._build_scheduling_prompt(preferences, goals, calendar_events, week_start, modification_request)
 
         try:
             logger.info("Sending request to Anthropic API...")
@@ -348,10 +362,11 @@ Provide a complete schedule for the entire week. Be practical and consider energ
         goals: List[ListItem],
         calendar_events: List[Dict[str, Any]],
         week_start: date,
+        modification_request: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate schedule using OpenAI API."""
         logger.info("Building prompt for OpenAI...")
-        prompt = self._build_scheduling_prompt(preferences, goals, calendar_events, week_start)
+        prompt = self._build_scheduling_prompt(preferences, goals, calendar_events, week_start, modification_request)
 
         try:
             logger.info("Sending request to OpenAI API...")

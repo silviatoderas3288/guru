@@ -8,6 +8,8 @@ export interface UserPreferences {
   workoutDays: string[];
   workoutPreferredTime: string[];
   bedTime: string[];
+  wakeTime: string[];
+  sleepHours: string[];
   focusTimeStart: string[];
   focusTimeEnd: string[];
   blockedApps: string[];
@@ -17,4 +19,6 @@ export interface UserPreferences {
   commuteDuration: string[];
   choreTime: string[];
   choreDuration: string[];
+  choreDistribution: string[];
+  mealDuration: string[];
 }

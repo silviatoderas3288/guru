@@ -111,6 +111,13 @@ const EditIcon = () => (
   </Svg>
 );
 
+const TrashIconSmall = ({ color = '#999' }: { color?: string }) => (
+  <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M3 6h18" />
+    <Path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+  </Svg>
+);
+
 interface PodcastScheduleData {
   title: string;
   link?: string;
@@ -983,6 +990,45 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
     }
   };
 
+  const deleteAllWeeklyGoals = async () => {
+    if (weeklyGoals.length === 0) return;
+
+    Alert.alert(
+      'Delete All Weekly Goals',
+      'Are you sure you want to delete all weekly goals? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const goalsToDelete = [...weeklyGoals];
+              setWeeklyGoals([]);
+
+              for (const goal of goalsToDelete) {
+                if (goal.calendar_event_id) {
+                  try {
+                    await CalendarApiService.deleteCalendarEvent(goal.calendar_event_id);
+                  } catch (calendarError) {
+                    console.log('Calendar event already deleted or not found:', calendarError);
+                  }
+                }
+                await ListItemApiService.deleteListItem(goal.id);
+              }
+
+              await loadCalendarEvents();
+            } catch (error) {
+              console.error('Error deleting all weekly goals:', error);
+              await loadWeeklyGoals();
+              Alert.alert('Error', 'Failed to delete all weekly goals. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const startEditingWeeklyGoal = (goal: ListItem) => {
     setEditingWeeklyGoalId(goal.id);
     setEditingWeeklyGoalText(goal.text);
@@ -1124,6 +1170,45 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
       await loadTodoItems();
       Alert.alert('Error', 'Failed to delete to-do item. Please try again.');
     }
+  };
+
+  const deleteAllTodoItems = async () => {
+    if (todoItems.length === 0) return;
+
+    Alert.alert(
+      'Delete All To-Do Items',
+      'Are you sure you want to delete all to-do items? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const itemsToDelete = [...todoItems];
+              setTodoItems([]);
+
+              for (const item of itemsToDelete) {
+                if (item.calendar_event_id) {
+                  try {
+                    await CalendarApiService.deleteCalendarEvent(item.calendar_event_id);
+                  } catch (calendarError) {
+                    console.log('Calendar event already deleted or not found:', calendarError);
+                  }
+                }
+                await ListItemApiService.deleteListItem(item.id);
+              }
+
+              await loadCalendarEvents();
+            } catch (error) {
+              console.error('Error deleting all todo items:', error);
+              await loadTodoItems();
+              Alert.alert('Error', 'Failed to delete all to-do items. Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const startEditingTodoItem = (item: ListItem) => {
@@ -1542,7 +1627,18 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
 
       {/* Weekly List Section */}
       <View style={styles.listSection}>
-        <Text style={styles.weeklyListTitle}>Weekly goals</Text>
+        <View style={styles.listHeaderRow}>
+          <Text style={styles.weeklyListTitle}>Weekly goals</Text>
+          {weeklyGoals.length > 0 && (
+            <TouchableOpacity
+              onPress={deleteAllWeeklyGoals}
+              style={styles.deleteAllButton}
+              activeOpacity={0.7}
+            >
+              <TrashIconSmall color="#4D5AEE" />
+            </TouchableOpacity>
+          )}
+        </View>
         <View style={styles.listItemsContainer}>
           {weeklyGoals.map((goal) => (
             <SwipeableListItem key={goal.id} onDelete={() => deleteWeeklyGoal(goal.id)}>
@@ -1630,7 +1726,18 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
 
       {/* To Do List Section */}
       <View style={styles.listSection}>
-        <Text style={styles.todoListTitle}>To do list</Text>
+        <View style={styles.listHeaderRow}>
+          <Text style={styles.todoListTitle}>To do list</Text>
+          {todoItems.length > 0 && (
+            <TouchableOpacity
+              onPress={deleteAllTodoItems}
+              style={styles.deleteAllButton}
+              activeOpacity={0.7}
+            >
+              <TrashIconSmall color="#FF9D00" />
+            </TouchableOpacity>
+          )}
+        </View>
         <View style={styles.listItemsContainer}>
           {todoItems.map((item) => (
             <SwipeableListItem key={item.id} onDelete={() => deleteTodoItem(item.id)}>
@@ -2160,13 +2267,23 @@ const styles = StyleSheet.create({
   listSection: {
     marginBottom: 30,
   },
+  listHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  deleteAllButton: {
+    padding: 4,
+    marginLeft: 8,
+    marginBottom: 4,
+  },
   weeklyListTitle: {
     color: '#4D5AEE',
     textAlign: 'center',
     fontFamily: 'Margarine',
     fontSize: 40,
     fontWeight: '400',
-    marginBottom: 20,
   },
   todoListTitle: {
     color: '#FF9D00',
@@ -2174,7 +2291,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     fontSize: 40,
     fontWeight: '400',
-    marginBottom: 20,
   },
   listContainer: {
     backgroundColor: '#fff',

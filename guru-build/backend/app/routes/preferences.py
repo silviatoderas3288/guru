@@ -22,6 +22,8 @@ class PreferenceSchema(BaseModel):
     workout_days: Optional[List[str]] = None
     workout_preferred_time: Optional[str] = None
     bed_time: Optional[str] = None
+    wake_time: Optional[str] = None
+    sleep_hours: Optional[str] = None
     focus_time_start: Optional[str] = None
     focus_time_end: Optional[str] = None
     blocked_apps: Optional[List[str]] = None
@@ -31,6 +33,8 @@ class PreferenceSchema(BaseModel):
     commute_method: Optional[str] = None
     chore_time: Optional[str] = None
     chore_duration: Optional[str] = None
+    chore_distribution: Optional[str] = None
+    meal_duration: Optional[str] = None
 
 
 class PreferenceResponse(BaseModel):
@@ -44,6 +48,8 @@ class PreferenceResponse(BaseModel):
     workout_days: Optional[List[str]] = None
     workout_preferred_time: Optional[str] = None
     bed_time: Optional[str] = None
+    wake_time: Optional[str] = None
+    sleep_hours: Optional[str] = None
     focus_time_start: Optional[str] = None
     focus_time_end: Optional[str] = None
     blocked_apps: Optional[List[str]] = None
@@ -53,6 +59,8 @@ class PreferenceResponse(BaseModel):
     commute_method: Optional[str] = None
     chore_time: Optional[str] = None
     chore_duration: Optional[str] = None
+    chore_distribution: Optional[str] = None
+    meal_duration: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -93,6 +101,8 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
             workout_days=[],
             workout_preferred_time=None,
             bed_time=None,
+            wake_time=None,
+            sleep_hours=None,
             focus_time_start=None,
             focus_time_end=None,
             blocked_apps=[],
@@ -101,7 +111,9 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
             commute_duration=None,
             commute_method=None,
             chore_time=None,
-            chore_duration=None
+            chore_duration=None,
+            chore_distribution=None,
+            meal_duration=None
         )
 
     return PreferenceResponse(
@@ -114,6 +126,8 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
         workout_days=preferences.workout_days or [],
         workout_preferred_time=preferences.workout_preferred_time,
         bed_time=preferences.bed_time,
+        wake_time=preferences.wake_time,
+        sleep_hours=preferences.sleep_hours,
         focus_time_start=preferences.focus_time_start,
         focus_time_end=preferences.focus_time_end,
         blocked_apps=preferences.blocked_apps or [],
@@ -122,7 +136,9 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
         commute_duration=preferences.commute_duration,
         commute_method=preferences.commute_method,
         chore_time=preferences.chore_time,
-        chore_duration=preferences.chore_duration
+        chore_duration=preferences.chore_duration,
+        chore_distribution=preferences.chore_distribution,
+        meal_duration=preferences.meal_duration
     )
 
 
@@ -151,6 +167,8 @@ async def save_preferences(
         preferences.workout_days = preference_data.workout_days
         preferences.workout_preferred_time = preference_data.workout_preferred_time
         preferences.bed_time = preference_data.bed_time
+        preferences.wake_time = preference_data.wake_time
+        preferences.sleep_hours = preference_data.sleep_hours
         preferences.focus_time_start = preference_data.focus_time_start
         preferences.focus_time_end = preference_data.focus_time_end
         preferences.blocked_apps = preference_data.blocked_apps
@@ -160,6 +178,8 @@ async def save_preferences(
         preferences.commute_method = preference_data.commute_method
         preferences.chore_time = preference_data.chore_time
         preferences.chore_duration = preference_data.chore_duration
+        preferences.chore_distribution = preference_data.chore_distribution
+        preferences.meal_duration = preference_data.meal_duration
     else:
         # Create new preferences
         preferences = UserPreference(
@@ -173,6 +193,8 @@ async def save_preferences(
             workout_days=preference_data.workout_days,
             workout_preferred_time=preference_data.workout_preferred_time,
             bed_time=preference_data.bed_time,
+            wake_time=preference_data.wake_time,
+            sleep_hours=preference_data.sleep_hours,
             focus_time_start=preference_data.focus_time_start,
             focus_time_end=preference_data.focus_time_end,
             blocked_apps=preference_data.blocked_apps,
@@ -181,7 +203,9 @@ async def save_preferences(
             commute_duration=preference_data.commute_duration,
             commute_method=preference_data.commute_method,
             chore_time=preference_data.chore_time,
-            chore_duration=preference_data.chore_duration
+            chore_duration=preference_data.chore_duration,
+            chore_distribution=preference_data.chore_distribution,
+            meal_duration=preference_data.meal_duration
         )
         db.add(preferences)
 
@@ -200,6 +224,8 @@ async def save_preferences(
             workout_days=preferences.workout_days or [],
             workout_preferred_time=preferences.workout_preferred_time,
             bed_time=preferences.bed_time,
+            wake_time=preferences.wake_time,
+            sleep_hours=preferences.sleep_hours,
             focus_time_start=preferences.focus_time_start,
             focus_time_end=preferences.focus_time_end,
             blocked_apps=preferences.blocked_apps or [],
@@ -208,6 +234,8 @@ async def save_preferences(
             commute_duration=preferences.commute_duration,
             commute_method=preferences.commute_method,
             chore_time=preferences.chore_time,
-            chore_duration=preferences.chore_duration
+            chore_duration=preferences.chore_duration,
+            chore_distribution=preferences.chore_distribution,
+            meal_duration=preferences.meal_duration
         )
     }

@@ -10,6 +10,7 @@ export interface GenerateScheduleRequest {
   weekStartDate: string;  // ISO date (YYYY-MM-DD)
   includeGoals?: boolean;
   forceRegenerate?: boolean;
+  modificationRequest?: string;  // Natural language request to modify the schedule
 }
 
 export interface RebalanceRequest {
@@ -105,6 +106,7 @@ class SchedulingAgentApiService {
       weekStartDate,
       includeGoals: request?.includeGoals ?? true,
       forceRegenerate: request?.forceRegenerate ?? false,
+      modificationRequest: request?.modificationRequest || null,
     };
 
     console.log('Generating schedule with payload:', payload);

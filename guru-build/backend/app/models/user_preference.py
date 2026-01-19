@@ -33,13 +33,19 @@ class UserPreference(BaseModel):
 
     # Chore preferences
     chore_time = Column(String)  # Single selection (e.g. Weekend Mornings)
-    chore_duration = Column(String)  # Single selection
+    chore_duration = Column(String)  # User input in minutes (e.g. "30", "60")
+    chore_distribution = Column(String, nullable=True)  # "distributed" or "one_session"
 
     # Focus & Schedule preferences
-    bed_time = Column(String, nullable=True)  # "HH:MM"
-    focus_time_start = Column(String, nullable=True)  # "HH:MM"
-    focus_time_end = Column(String, nullable=True)  # "HH:MM"
+    bed_time = Column(String, nullable=True)  # "HH:MM" - only for agent context, not scheduled
+    wake_time = Column(String, nullable=True)  # "HH:MM" - only for agent context, not scheduled
+    sleep_hours = Column(String, nullable=True)  # Hours of sleep (e.g. "7", "8")
+    focus_time_start = Column(String, nullable=True)  # "HH:MM" - for app blocking, not calendar
+    focus_time_end = Column(String, nullable=True)  # "HH:MM" - for app blocking, not calendar
     blocked_apps = Column(ARRAY(String), nullable=True)  # List of app names
+
+    # Meal preferences
+    meal_duration = Column(String, nullable=True)  # Duration in minutes for meals (e.g. "30")
 
     # Relationship
     user = relationship("User", back_populates="user_preferences")
