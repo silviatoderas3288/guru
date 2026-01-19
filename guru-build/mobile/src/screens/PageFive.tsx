@@ -1069,6 +1069,7 @@ export const PageFive: React.FC = () => {
   // AI Schedule Modal states
   const [showAIScheduleModal, setShowAIScheduleModal] = useState(false);
   const [aiScheduleLoading, setAiScheduleLoading] = useState(false);
+  const [isAddingEvents, setIsAddingEvents] = useState(false);
   const [aiScheduleResult, setAiScheduleResult] = useState<GenerateScheduleResponse | null>(null);
   const [weekStartDate, setWeekStartDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -1152,7 +1153,7 @@ export const PageFive: React.FC = () => {
     if (!aiScheduleResult?.scheduledEvents) return;
 
     try {
-      setAiScheduleLoading(true);
+      setIsAddingEvents(true);
       const events = aiScheduleResult.scheduledEvents;
       let addedCount = 0;
       
@@ -1227,7 +1228,7 @@ export const PageFive: React.FC = () => {
       console.error('Error accepting schedule:', error);
       Alert.alert('Error', 'Failed to save schedule. Please try again.');
     } finally {
-      setAiScheduleLoading(false);
+      setIsAddingEvents(false);
     }
   };
 
@@ -1716,16 +1717,18 @@ export const PageFive: React.FC = () => {
                 />
               )}
 
-              {aiScheduleLoading ? (
+              {aiScheduleLoading || isAddingEvents ? (
                 <View style={styles.aiLoadingContainer}>
                   <Image
                     source={require('../../assets/ai.png')}
                     style={styles.aiLoadingIcon}
                     resizeMode="contain"
                   />
-                  <Text style={styles.aiLoadingText}>AI is creating your schedule...</Text>
+                  <Text style={styles.aiLoadingText}>
+                    {isAddingEvents ? 'Adding events to your calendar...' : 'AI is creating your schedule...'}
+                  </Text>
                   <Text style={styles.aiLoadingSubtext}>
-                    Analyzing your preferences and calendar
+                    {isAddingEvents ? 'Creating goals and calendar events' : 'Analyzing your preferences and calendar'}
                   </Text>
                 </View>
               ) : aiScheduleResult ? (
@@ -1752,7 +1755,12 @@ export const PageFive: React.FC = () => {
                         acc[day].push(event);
                         return acc;
                       }, {} as Record<string, ScheduledEvent[]>)
-                    ).map(([day, events]) => (
+                    )
+                    .sort(([dayA], [dayB]) => {
+                      const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Unscheduled'];
+                      return dayOrder.indexOf(dayA) - dayOrder.indexOf(dayB);
+                    })
+                    .map(([day, events]) => (
                       <View key={day} style={styles.daySection}>
                         <Text style={styles.dayHeader}>{day}</Text>
                         {events.map((event, index) => (

@@ -16,7 +16,7 @@ from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from anthropic import Anthropic
 from openai import OpenAI
 
@@ -25,6 +25,7 @@ from app.models.user_preference import UserPreference
 from app.models.list_item import ListItem, ListItemType
 from app.models.schedule_agent import ScheduleSuggestion, SuggestionStatus, ScheduleHistory, ChangeType
 from app.models.workout import Workout
+from app.models.workout_section import WorkoutSection
 from app.schemas.schedule import (
     GenerateScheduleResponse,
     ScheduledEvent,
@@ -86,11 +87,15 @@ class SchedulingAgentService:
         )
 
     def _get_user_workouts(self) -> List[Workout]:
-        """Fetch user's workouts from their workout plan."""
+        """Fetch user's incomplete workouts from their workout plan with sections and exercises."""
         return (
             self.db.query(Workout)
             .filter_by(user_id=self.user.id)
-            # Fetch ALL workouts, even completed ones, as they serve as templates
+            .filter(Workout.completed == False)
+            .options(
+                joinedload(Workout.sections).joinedload(WorkoutSection.exercises)
+            )
+            .order_by(Workout.updated_at.desc())
             .all()
         )
 
@@ -226,6 +231,32 @@ class SchedulingAgentService:
     ) -> str:
         """Build the prompt for Claude to generate a schedule."""
 
+        # Calculate workout gap
+        num_specific_workouts = len(workouts) if workouts else 0
+        target_frequency = 3 # Default
+        workout_gap_instruction = ""
+        
+        if preferences and preferences.workout_frequency:
+            freq_str = preferences.workout_frequency.lower()
+            if "1-2" in freq_str:
+                target_frequency = 2
+            elif "3-4" in freq_str:
+                target_frequency = 4
+            elif "5-6" in freq_str:
+                target_frequency = 6
+            elif "daily" in freq_str:
+                target_frequency = 7
+        
+        workouts_needed = max(0, target_frequency - num_specific_workouts)
+        
+        workout_gap_instruction = f"""
+   - **WORKOUT SCHEDULING LOGIC (STRICTLY FOLLOW THIS):**
+     1. **Priority 1:** Schedule ALL {num_specific_workouts} specific workouts listed below in "USER'S WORKOUT PLAN". These are the user's defined routines (e.g. "Leg Day", "Upper Body"). You MUST schedule these first.
+     2. **Priority 2:** The user prefers to workout {target_frequency} times per week. You have {num_specific_workouts} specific workouts.
+     3. **Action:** After scheduling the {num_specific_workouts} specific workouts, you MUST generate {workouts_needed} ADDITIONAL generic workout sessions to meet the user's frequency goal.
+     4. **For Generic Workouts:** Use the user's preferred "Workout types" (e.g. {preferences.workout_types if preferences else 'Cardio'}) to title these sessions (e.g. "Cardio Session", "Yoga Flow"). Do NOT use the names of the specific workouts again.
+"""
+
         # Format preferences for the prompt
         pref_text = "No preferences set."
         if preferences:
@@ -234,7 +265,7 @@ User Preferences:
 - Timezone: {timezone} (ALL times must be in this timezone)
 - Workout types: {preferences.workout_types or 'Not specified'}
 - Workout duration: {preferences.workout_duration or 'Not specified'}
-- Workout frequency: {preferences.workout_frequency or 'Not specified'}
+- Workout frequency: {preferences.workout_frequency or 'Not specified'} (Target: {target_frequency} sessions/week)
 - Preferred workout days: {preferences.workout_days or 'Not specified'}
 - Preferred workout time: {preferences.workout_preferred_time or 'Not specified'}
 - Podcast topics: {preferences.podcast_topics or 'Not specified'}
@@ -265,7 +296,7 @@ User Preferences:
         workouts_text = "No specific workouts in workout plan."
         if workouts:
             workouts_text = "USER'S WORKOUT PLAN (These specific workouts MUST be scheduled):\n"
-            for workout in workouts:
+            for idx, workout in enumerate(workouts):
                 exercises_list = []
                 for section in workout.sections:
                     for exercise in section.exercises:
@@ -277,8 +308,17 @@ User Preferences:
                             exercises_list.append(f"  - {exercise.name}")
 
                 exercises_str = "\n".join(exercises_list) if exercises_list else "  No exercises defined"
-                description_str = f"  Description: {workout.description}" if workout.description else ""
-                workouts_text += f"\n* {workout.title}:{description_str}\n  Exercises:\n{exercises_str}\n"
+                description_str = workout.description if workout.description else ""
+                
+                workouts_text += f"""
+---
+WORKOUT_ID: {idx + 1}
+TITLE: {workout.title}
+DESCRIPTION: {description_str}
+EXERCISES:
+{exercises_str}
+---
+"""
 
         # Format calendar events (existing commitments)
         # Google Calendar color IDs: 1=Lavender, 2=Sage, 3=Grape, 4=Flamingo, 5=Banana, 6=Tangerine, 7=Peacock, 8=Graphite, 9=Blueberry, 10=Basil, 11=Tomato (RED = high priority)
@@ -320,7 +360,7 @@ IMPORTANT: You MUST incorporate this modification request into the schedule. Thi
 ''' if modification_request else ''}
 INSTRUCTIONS:
 1. Create a balanced weekly schedule that includes:
-   - **PRIORITY: Schedule the SPECIFIC workouts from the user's workout plan** - these are the exact workouts they created and want to do. Schedule them on the user's preferred workout days and times, respecting their workout frequency preference. if the ser has evening preferece for workouts please put them after the commute time.
+   {workout_gap_instruction}
    - Time blocks for weekly goals/tasks
    - **PODCAST RECOMMENDATIONS** (podcasts should ONLY be suggested during these activities, NOT as separate blocks):
      * During COMMUTE times - suggest podcasts matching their favorite topics
@@ -344,11 +384,9 @@ INSTRUCTIONS:
    - Use the meal_duration preference when scheduling meal times
    - Leave buffer time between activities (at least 10-15 minutes)
    - Make the schedule realistic and achievable
-   - **CRITICAL FOR WORKOUTS**: When scheduling workouts from the user's workout plan:
-     * Use the EXACT workout title (e.g., "Upper Body Strength", "Morning Cardio")
-     * Include ALL exercises in the description field, formatted as a list (e.g., "Squats: 3 sets × 12 reps, Lunges: 3 sets × 10 reps")
-     * If the workout has a description, include it at the start of the description field
-     * The scheduled event should contain the complete workout details so the user knows exactly what exercises to do
+   - **CRITICAL FOR WORKOUTS**: When scheduling workouts from the "USER'S WORKOUT PLAN":
+     * **TITLE:** You MUST use the **EXACT** title of the workout as listed in the `TITLE:` field. Do not modify, prefix, or suffix it. If the workout is named "Run", the event title MUST be "Run".
+     * **DESCRIPTION:** You MUST copy the `DESCRIPTION` and `EXERCISES` fields into the event description. Do not summarize or change the exercises. The user needs to see exactly what to do.
    - **FILLING IN ADDITIONAL WORKOUTS**: If the user has fewer workouts in their workout plan than their preferred workout frequency (e.g., they have 3 workouts but prefer 5-6 times/week), you should:
      * First schedule ALL workouts from the user's workout plan
      * Then generate additional workout sessions based on their workout_types preference to fill in the remaining days
@@ -823,7 +861,7 @@ Provide a complete schedule for the entire week. Be practical and consider energ
                             if workout.description:
                                 full_description = workout.description + "\n\n"
                             if exercises_desc:
-                                full_description += "Exercises: " + ", ".join(exercises_desc)
+                                full_description += "Exercises:\n" + "\n".join(exercises_desc)
                             if not full_description:
                                 full_description = f"{duration}-minute workout session"
 
