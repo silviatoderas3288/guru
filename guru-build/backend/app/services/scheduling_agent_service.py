@@ -90,7 +90,7 @@ class SchedulingAgentService:
         return (
             self.db.query(Workout)
             .filter_by(user_id=self.user.id)
-            .filter(Workout.completed == False)
+            # Fetch ALL workouts, even completed ones, as they serve as templates
             .all()
         )
 
