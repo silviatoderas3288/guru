@@ -952,6 +952,8 @@ export const PageFive: React.FC = () => {
   const [aiScheduleResult, setAiScheduleResult] = useState<GenerateScheduleResponse | null>(null);
   const [weekStartDate, setWeekStartDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showDatePickerModal, setShowDatePickerModal] = useState(false);
+  const [modificationRequest, setModificationRequest] = useState('');
 
   useEffect(() => {
     loadUserData();
@@ -976,20 +978,22 @@ export const PageFive: React.FC = () => {
     }
   };
 
-  const handleAISchedule = async (dateObj?: Date) => {
+  const handleAISchedule = async (dateObj?: Date, modification?: string) => {
     // If a date is provided, use it. Otherwise use the current state or default.
     const targetDate = dateObj || weekStartDate;
-    
+
     // Ensure we are using the correct date string format (YYYY-MM-DD)
     const dateString = targetDate.toISOString().split('T')[0];
 
     setAiScheduleLoading(true);
     setShowAIScheduleModal(true);
+    setShowDatePickerModal(false);
 
     try {
       const result = await schedulingAgentApi.generateSchedule({
         weekStartDate: dateString,
         forceRegenerate: true,
+        modificationRequest: modification || modificationRequest || undefined,
       });
       setAiScheduleResult(result);
     } catch (error) {
@@ -1002,6 +1006,12 @@ export const PageFive: React.FC = () => {
     } finally {
       setAiScheduleLoading(false);
     }
+  };
+
+  // Open the date picker modal first before generating schedule
+  const handleOpenDatePicker = () => {
+    setShowDatePickerModal(true);
+    setModificationRequest('');
   };
 
   const handleDateChange = (event: any, selectedDate?: Date) => {
@@ -1342,7 +1352,7 @@ export const PageFive: React.FC = () => {
         </View>
 
         {/* AI Generate Schedule Button */}
-        <TouchableOpacity style={styles.aiScheduleButton} onPress={() => handleAISchedule()}>
+        <TouchableOpacity style={styles.aiScheduleButton} onPress={handleOpenDatePicker}>
           <LinearGradient
             colors={['#FF9D00', '#4D5AEE']}
             start={{ x: 0, y: 0 }}
@@ -1365,6 +1375,149 @@ export const PageFive: React.FC = () => {
 
         <View style={styles.spacer} />
       </ScrollView>
+
+      {/* Date Picker Modal - Shows BEFORE generating schedule */}
+      <Modal
+        visible={showDatePickerModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDatePickerModal(false)}
+      >
+        <View style={styles.datePickerModalOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setShowDatePickerModal(false)}
+          />
+          <View style={styles.datePickerModalCard}>
+            <Text style={styles.datePickerModalTitle}>Schedule Week</Text>
+            <Text style={styles.datePickerModalSubtitle}>
+              Select the week start date for your schedule
+            </Text>
+
+            {/* Custom Date Picker */}
+            <View style={styles.datePickerContainer}>
+              <TouchableOpacity
+                style={styles.dateArrowButton}
+                onPress={() => {
+                  const newDate = new Date(weekStartDate);
+                  newDate.setDate(newDate.getDate() - 7);
+                  setWeekStartDate(newDate);
+                }}
+              >
+                <Ionicons name="chevron-back" size={28} color="#4D5AEE" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.dateDisplayBox}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={styles.dateDisplayMonth}>
+                  {weekStartDate.toLocaleDateString('en-US', { month: 'short' })}
+                </Text>
+                <Text style={styles.dateDisplayDay}>
+                  {weekStartDate.getDate()}
+                </Text>
+                <Text style={styles.dateDisplayYear}>
+                  {weekStartDate.getFullYear()}
+                </Text>
+                <Text style={styles.dateDisplayWeekday}>
+                  {weekStartDate.toLocaleDateString('en-US', { weekday: 'long' })}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.dateArrowButton}
+                onPress={() => {
+                  const newDate = new Date(weekStartDate);
+                  newDate.setDate(newDate.getDate() + 7);
+                  setWeekStartDate(newDate);
+                }}
+              >
+                <Ionicons name="chevron-forward" size={28} color="#4D5AEE" />
+              </TouchableOpacity>
+            </View>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={weekStartDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(event, selectedDate) => {
+                  if (Platform.OS === 'android') {
+                    setShowDatePicker(false);
+                  }
+                  if (selectedDate) {
+                    setWeekStartDate(selectedDate);
+                  }
+                }}
+                style={styles.dateTimePicker}
+              />
+            )}
+
+            {Platform.OS === 'ios' && showDatePicker && (
+              <TouchableOpacity
+                style={styles.datePickerDoneButton}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={styles.datePickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Quick Select Buttons */}
+            <View style={styles.quickSelectContainer}>
+              <TouchableOpacity
+                style={styles.quickSelectButton}
+                onPress={() => {
+                  const today = new Date();
+                  const day = today.getDay();
+                  const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+                  setWeekStartDate(new Date(today.setDate(diff)));
+                }}
+              >
+                <Text style={styles.quickSelectText}>This Week</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.quickSelectButton}
+                onPress={() => {
+                  const today = new Date();
+                  const day = today.getDay();
+                  const diff = today.getDate() - day + (day === 0 ? 1 : 8);
+                  setWeekStartDate(new Date(today.setDate(diff)));
+                }}
+              >
+                <Text style={styles.quickSelectText}>Next Week</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Generate Button */}
+            <TouchableOpacity
+              style={styles.generateScheduleButton}
+              onPress={() => handleAISchedule(weekStartDate)}
+            >
+              <LinearGradient
+                colors={['#FF9D00', '#4D5AEE']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.generateButtonGradient}
+              >
+                <Image
+                  source={require('../../assets/ai.png')}
+                  style={styles.generateButtonIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.generateButtonText}>Generate Schedule</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.datePickerCancelButton}
+              onPress={() => setShowDatePickerModal(false)}
+            >
+              <Text style={styles.datePickerCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* AI Schedule Result Modal */}
       <Modal
@@ -1463,12 +1616,30 @@ export const PageFive: React.FC = () => {
                     <Text style={styles.noEventsText}>No events scheduled</Text>
                   )}
 
+                  {/* Modification Request Input */}
+                  <View style={styles.modificationContainer}>
+                    <Text style={styles.modificationLabel}>
+                      Want to modify this schedule? Describe what you'd like changed:
+                    </Text>
+                    <TextInput
+                      style={styles.modificationInput}
+                      value={modificationRequest}
+                      onChangeText={setModificationRequest}
+                      placeholder="e.g., Move workouts to evening, add more focus time on Wednesday..."
+                      placeholderTextColor="#999"
+                      multiline
+                      numberOfLines={3}
+                    />
+                  </View>
+
                   <View style={styles.aiButtonsRow}>
                     <TouchableOpacity
                       style={[styles.aiActionButton, styles.regenerateButton]}
-                      onPress={() => handleAISchedule()}
+                      onPress={() => handleAISchedule(weekStartDate, modificationRequest)}
                     >
-                      <Text style={styles.regenerateButtonText}>Regenerate</Text>
+                      <Text style={styles.regenerateButtonText}>
+                        {modificationRequest ? 'Apply Changes' : 'Regenerate'}
+                      </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -1837,5 +2008,185 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Margarine',
     color: '#333',
+  },
+  // Date Picker Modal Styles
+  datePickerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  datePickerModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#F7E8FF',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 12,
+    alignItems: 'center',
+  },
+  datePickerModalTitle: {
+    fontSize: 24,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  datePickerModalSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  datePickerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  dateArrowButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(77, 90, 238, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dateDisplayBox: {
+    backgroundColor: 'rgba(77, 90, 238, 0.15)',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    marginHorizontal: 16,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#4D5AEE',
+  },
+  dateDisplayMonth: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    textTransform: 'uppercase',
+  },
+  dateDisplayDay: {
+    fontSize: 48,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    lineHeight: 52,
+  },
+  dateDisplayYear: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+  },
+  dateDisplayWeekday: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#666',
+    marginTop: 4,
+  },
+  dateTimePicker: {
+    width: '100%',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  datePickerDoneButton: {
+    backgroundColor: '#4D5AEE',
+    paddingVertical: 8,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  datePickerDoneText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+  },
+  quickSelectContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  quickSelectButton: {
+    backgroundColor: 'rgba(255, 157, 0, 0.15)',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FF9D00',
+  },
+  quickSelectText: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+  },
+  generateScheduleButton: {
+    width: '100%',
+    borderRadius: 25,
+    marginBottom: 12,
+    shadowColor: '#4D5AEE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  generateButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 25,
+    gap: 10,
+  },
+  generateButtonIcon: {
+    width: 24,
+    height: 24,
+  },
+  generateButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  datePickerCancelButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  datePickerCancelText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#666',
+  },
+  // Modification Input Styles
+  modificationContainer: {
+    width: '100%',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  modificationLabel: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    marginBottom: 8,
+  },
+  modificationInput: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 12,
+    minHeight: 80,
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#333',
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: 'rgba(77, 90, 238, 0.3)',
   },
 });

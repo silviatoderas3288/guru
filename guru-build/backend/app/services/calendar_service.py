@@ -68,6 +68,23 @@ class CalendarService:
             logger.error(f"Error initializing calendar service: {e}", exc_info=True)
             raise
 
+    def get_calendar_timezone(self, calendar_id: str = 'primary') -> str:
+        """
+        Get the timezone of a specific calendar.
+
+        Args:
+            calendar_id: Calendar ID (defaults to primary)
+
+        Returns:
+            Timezone string (e.g., 'America/Los_Angeles', 'UTC')
+        """
+        try:
+            calendar = self.service.calendars().get(calendarId=calendar_id).execute()
+            return calendar.get('timeZone', 'UTC')
+        except Exception as e:
+            logger.error(f"Error fetching calendar timezone: {e}")
+            return 'UTC'
+
     def get_events(
         self,
         time_min: Optional[datetime] = None,

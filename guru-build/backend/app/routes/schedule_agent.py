@@ -15,24 +15,9 @@ from app.schemas.schedule import (
 )
 from app.services.scheduling_agent_service import SchedulingAgentService
 from app.models.user import User
+from app.services.auth_service import get_current_user
 
 router = APIRouter()
-
-
-# Dependency to get current user (reused from calendar routes)
-async def get_current_user(db: Session = Depends(get_db)) -> User:
-    """
-    Get current authenticated user.
-    For development, returns the most recently updated user.
-    TODO: Implement proper authentication middleware with JWT tokens
-    """
-    user = db.query(User).order_by(User.updated_at.desc()).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No user found. Please authenticate first."
-        )
-    return user
 
 
 @router.post("/generate", response_model=GenerateScheduleResponse)

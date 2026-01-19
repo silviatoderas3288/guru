@@ -21,6 +21,7 @@ from app.models.user import User
 from app.models.user_preference import UserPreference
 from app.models.list_item import ListItem, ListItemType
 from app.models.schedule_agent import ScheduleSuggestion, SuggestionStatus, ScheduleHistory, ChangeType
+from app.models.workout import Workout
 from app.schemas.schedule import (
     GenerateScheduleResponse,
     ScheduledEvent,
@@ -81,6 +82,15 @@ class SchedulingAgentService:
             .all()
         )
 
+    def _get_user_workouts(self) -> List[Workout]:
+        """Fetch user's workouts from their workout plan."""
+        return (
+            self.db.query(Workout)
+            .filter_by(user_id=self.user.id)
+            .filter(Workout.completed == False)
+            .all()
+        )
+
     def _get_calendar_events(self, week_start: date) -> List[Dict[str, Any]]:
         """Fetch calendar events for the week."""
         try:
@@ -107,6 +117,7 @@ class SchedulingAgentService:
         goals: List[ListItem],
         calendar_events: List[Dict[str, Any]],
         week_start: date,
+        workouts: List[Workout] = None,
         modification_request: Optional[str] = None,
     ) -> str:
         """Build the prompt for Claude to generate a schedule."""
@@ -144,21 +155,52 @@ User Preferences:
                 [f"- {goal.text}" for goal in goals]
             )
 
+        # Format user's workout plan (specific workouts to schedule)
+        workouts_text = "No specific workouts in workout plan."
+        if workouts:
+            workouts_text = "USER'S WORKOUT PLAN (These specific workouts MUST be scheduled):\n"
+            for workout in workouts:
+                exercises_list = []
+                for section in workout.sections:
+                    for exercise in section.exercises:
+                        if exercise.sets and exercise.reps:
+                            exercises_list.append(f"  - {exercise.name}: {exercise.sets} sets × {exercise.reps} reps")
+                        elif exercise.duration:
+                            exercises_list.append(f"  - {exercise.name}: {exercise.duration}")
+                        else:
+                            exercises_list.append(f"  - {exercise.name}")
+
+                exercises_str = "\n".join(exercises_list) if exercises_list else "  No exercises defined"
+                description_str = f"  Description: {workout.description}" if workout.description else ""
+                workouts_text += f"\n* {workout.title}:{description_str}\n  Exercises:\n{exercises_str}\n"
+
         # Format calendar events (existing commitments)
+        # Google Calendar color IDs: 1=Lavender, 2=Sage, 3=Grape, 4=Flamingo, 5=Banana, 6=Tangerine, 7=Peacock, 8=Graphite, 9=Blueberry, 10=Basil, 11=Tomato (RED = high priority)
         events_text = "No existing calendar events."
         if calendar_events:
-            events_text = "Existing Calendar Events (DO NOT schedule over these):\n"
+            events_text = "EXISTING CALENDAR EVENTS - BLOCKED TIME SLOTS (You MUST NOT schedule anything during these times):\n"
             for event in calendar_events:
                 start = event.get("start", {}).get("dateTime", event.get("start", {}).get("date", "Unknown"))
                 end = event.get("end", {}).get("dateTime", event.get("end", {}).get("date", "Unknown"))
-                events_text += f"- {event.get('summary', 'Untitled')}: {start} to {end}\n"
+                color_id = event.get("colorId", "")
+                # Determine priority based on color (11 = Tomato/Red = HIGH PRIORITY)
+                priority_note = ""
+                if color_id == "11":
+                    priority_note = " [HIGH PRIORITY - RED]"
+                elif color_id == "4":
+                    priority_note = " [IMPORTANT - PINK]"
+                elif color_id == "6":
+                    priority_note = " [IMPORTANT - ORANGE]"
+                events_text += f"- {event.get('summary', 'Untitled')}{priority_note}: {start} to {end}\n"
 
         # Build the main prompt
-        prompt = f"""You are an AI scheduling assistant. Your task is to create an optimal weekly schedule for a user based on their preferences, goals, and existing calendar commitments.
+        prompt = f"""You are an AI scheduling assistant. Your task is to create an optimal weekly schedule for a user based on their preferences, goals, existing calendar commitments, and their specific workout plan.
 
 Week starting: {week_start.strftime('%A, %B %d, %Y')}
 
 {pref_text}
+
+{workouts_text}
 
 {goals_text}
 
@@ -172,18 +214,46 @@ IMPORTANT: You MUST incorporate this modification request into the schedule. Thi
 ''' if modification_request else ''}
 INSTRUCTIONS:
 1. Create a balanced weekly schedule that includes:
-   - Workouts on the user's preferred days and times
+   - **PRIORITY: Schedule the SPECIFIC workouts from the user's workout plan** - these are the exact workouts they created and want to do. Schedule them on the user's preferred workout days and times, respecting their workout frequency preference. if the ser has evening preferece for workouts please put them after the commute time.
    - Time blocks for weekly goals/tasks
+   - **PODCAST RECOMMENDATIONS** (podcasts should ONLY be suggested during these activities, NOT as separate blocks):
+     * During COMMUTE times - suggest podcasts matching their favorite topics
+     * During CHORE times - suggest podcasts to make chores more enjoyable
+     * During MEAL times (lunch, dinner) - suggest podcasts for mealtime listening
+     * DO NOT create separate "Podcast Time" blocks - podcasts are paired with other activities only
+     * Always include a specific podcast recommendation in the "suggested_podcast" field for commute, chore, and meal events
    - Commute times with podcast suggestions based on their interests
-   - Focus time blocks for deep work
-   - Chore time on their preferred schedule
-   - Breaks and meals at reasonable times 
+   - Chore time on their preferred schedule with podcast suggestions
+   - Breaks and meals at reasonable times
 
-2. IMPORTANT CONSTRAINTS:
-   - NEVER schedule over important (high priority) or existing calendar events. you can rearrange them if they are marked as medium or low priority or if they do not have a deadline that the user marked 
-   - Respect the user's bed time (don't schedule activities too late)
+2. CRITICAL CONSTRAINTS (MUST FOLLOW - THESE ARE ABSOLUTE RULES):
+   - **WAKE TIME RULE - NOTHING BEFORE WAKE TIME**: The user's day starts at their wake_time. You MUST NOT schedule ANY events before the wake_time. For example, if wake_time is 7:00 AM, the FIRST event of each day can only start at 7:00 AM or later. This applies to EVERY day of the week.
+   - **SLEEP TIME RULE - NOTHING DURING SLEEP**: You MUST NEVER schedule ANY activity during sleep hours (from bed_time to wake_time). If bed_time is 11:00 PM and wake_time is 7:00 AM, then 11:00 PM to 7:00 AM is completely blocked - no exceptions.
+   - **HIGH PRIORITY EVENTS ARE UNTOUCHABLE**: Events marked [HIGH PRIORITY - RED] in existing calendar events are absolutely blocked. You MUST NOT schedule anything that overlaps with these times - not even by 1 minute.
+   - **EXISTING CALENDAR EVENTS ARE BLOCKED**: You MUST NEVER schedule ANY activity during the time slots of existing calendar events listed above. These are immovable commitments. If an event is from 9:00 AM to 5:00 PM, that ENTIRE time range is unavailable - schedule around it, not during it.
+   - DO NOT add focus time blocks to the calendar - focus time is ONLY used for app blocking functionality
+   - DO NOT add sleep/bed time blocks to the calendar - these are just parameters for scheduling constraints
+   - Respect chore distribution preference: if "distributed", spread chores throughout the week; if "one_session", schedule all chores together
+   - Use the meal_duration preference when scheduling meal times
    - Leave buffer time between activities (at least 10-15 minutes)
    - Make the schedule realistic and achievable
+   - **CRITICAL FOR WORKOUTS**: When scheduling workouts from the user's workout plan:
+     * Use the EXACT workout title (e.g., "Upper Body Strength", "Morning Cardio")
+     * Include ALL exercises in the description field, formatted as a list (e.g., "Squats: 3 sets × 12 reps, Lunges: 3 sets × 10 reps")
+     * If the workout has a description, include it at the start of the description field
+     * The scheduled event should contain the complete workout details so the user knows exactly what exercises to do
+   - **FILLING IN ADDITIONAL WORKOUTS**: If the user has fewer workouts in their workout plan than their preferred workout frequency (e.g., they have 3 workouts but prefer 5-6 times/week), you should:
+     * First schedule ALL workouts from the user's workout plan
+     * Then generate additional workout sessions based on their workout_types preference to fill in the remaining days
+     * For these generated workouts, create appropriate titles like "Cardio Session", "Strength Training", "Yoga Session" based on their preferred workout types
+     * Include suggested exercises in the description based on the workout type
+   - **PODCAST PAIRING RULES** (podcasts are NOT standalone events):
+     * DO NOT create separate "Podcast Time" events - podcasts are ONLY paired with other activities
+     * For COMMUTE events, ALWAYS include a suggested_podcast recommendation based on their podcast_topics
+     * For CHORE events, ALWAYS include a suggested_podcast recommendation to make chores enjoyable
+     * For MEAL events (lunch, dinner), include a suggested_podcast recommendation for mealtime listening
+     * DO NOT suggest podcasts for workouts - users may prefer music or focus during exercise
+     * Be specific with podcast suggestions - include the topic and a brief description (e.g., "Tech Talk Daily - Latest in AI and startups" not just "Technology podcast")
 
 3. Return your response as a JSON object with this exact structure:
 {{
@@ -199,9 +269,45 @@ INSTRUCTIONS:
             "priority": 7,
             "suggested_podcast": null,
             "color": "#4CAF50"
+        }},
+        {{
+            "title": "Morning Commute",
+            "activity_type": "commute",
+            "day": "Monday",
+            "start_time": "2024-01-15T08:00:00",
+            "end_time": "2024-01-15T08:30:00",
+            "description": "Commute to work - great time for podcasts!",
+            "is_flexible": false,
+            "priority": 8,
+            "suggested_podcast": "The Daily Tech News - Catch up on technology trends",
+            "color": "#2196F3"
+        }},
+        {{
+            "title": "Lunch",
+            "activity_type": "meal",
+            "day": "Monday",
+            "start_time": "2024-01-15T12:30:00",
+            "end_time": "2024-01-15T13:00:00",
+            "description": "Lunch break - enjoy a podcast while eating",
+            "is_flexible": true,
+            "priority": 5,
+            "suggested_podcast": "Lex Fridman Podcast - AI and Technology Discussion",
+            "color": "#FF9800"
+        }},
+        {{
+            "title": "House Chores",
+            "activity_type": "chore",
+            "day": "Monday",
+            "start_time": "2024-01-15T18:00:00",
+            "end_time": "2024-01-15T19:00:00",
+            "description": "Weekly cleaning and organizing",
+            "is_flexible": true,
+            "priority": 5,
+            "suggested_podcast": "Comedy Hour - Make chores fun with laughs",
+            "color": "#795548"
         }}
     ],
-    "reasoning": "A brief explanation of your scheduling decisions",
+    "reasoning": "A brief explanation of your scheduling decisions including how podcasts were paired with commutes, meals, and chores",
     "warnings": [
         {{
             "message": "Limited time slots available on Wednesday due to meetings",
@@ -253,11 +359,66 @@ Provide a complete schedule for the entire week. Be practical and consider energ
                 return self._suggestion_to_response(existing)
 
         # Gather context
-        logger.info("Gathering user context (preferences, goals, calendar)...")
+        logger.info("Gathering user context (preferences, goals, calendar, workouts)...")
         preferences = self._get_user_preferences()
         goals = self._get_weekly_goals() if include_goals else []
         calendar_events = self._get_calendar_events(week_start_date)
-        logger.info(f"Context gathered: Preferences found={bool(preferences)}, Goals={len(goals)}, Calendar Events={len(calendar_events)}")
+        workouts = self._get_user_workouts()
+        logger.info(f"Context gathered: Preferences found={bool(preferences)}, Goals={len(goals)}, Calendar Events={len(calendar_events)}, Workouts={len(workouts)}")
+
+        # Log detailed preferences
+        if preferences:
+            logger.info("=== USER PREFERENCES ===")
+            logger.info(f"  Workout types: {preferences.workout_types}")
+            logger.info(f"  Workout duration: {preferences.workout_duration}")
+            logger.info(f"  Workout frequency: {preferences.workout_frequency}")
+            logger.info(f"  Workout days: {preferences.workout_days}")
+            logger.info(f"  Workout preferred time: {preferences.workout_preferred_time}")
+            logger.info(f"  Bed time: {preferences.bed_time}")
+            logger.info(f"  Wake time: {preferences.wake_time}")
+            logger.info(f"  Sleep hours: {preferences.sleep_hours}")
+            logger.info(f"  Commute start: {preferences.commute_start}")
+            logger.info(f"  Commute end: {preferences.commute_end}")
+            logger.info(f"  Chore time: {preferences.chore_time}")
+            logger.info(f"  Chore duration: {preferences.chore_duration}")
+            logger.info(f"  Chore distribution: {preferences.chore_distribution}")
+            logger.info(f"  Meal duration: {preferences.meal_duration}")
+            logger.info(f"  Focus time: {preferences.focus_time_start} - {preferences.focus_time_end}")
+            logger.info(f"  Podcast topics: {preferences.podcast_topics}")
+        else:
+            logger.info("=== NO USER PREFERENCES FOUND ===")
+
+        # Log detailed workouts
+        if workouts:
+            logger.info("=== USER WORKOUTS FROM WORKOUT PLAN ===")
+            for idx, workout in enumerate(workouts):
+                logger.info(f"  Workout {idx + 1}: {workout.title}")
+                logger.info(f"    Description: {workout.description}")
+                logger.info(f"    Completed: {workout.completed}")
+                for section in workout.sections:
+                    logger.info(f"    Section: {section.title}")
+                    for exercise in section.exercises:
+                        if exercise.sets and exercise.reps:
+                            logger.info(f"      - {exercise.name}: {exercise.sets} sets × {exercise.reps} reps")
+                        elif exercise.duration:
+                            logger.info(f"      - {exercise.name}: {exercise.duration}")
+                        else:
+                            logger.info(f"      - {exercise.name}")
+        else:
+            logger.info("=== NO WORKOUTS FOUND IN WORKOUT PLAN ===")
+
+        # Log calendar events
+        if calendar_events:
+            logger.info("=== EXISTING CALENDAR EVENTS ===")
+            for idx, event in enumerate(calendar_events):
+                start = event.get("start", {}).get("dateTime", event.get("start", {}).get("date", "Unknown"))
+                end = event.get("end", {}).get("dateTime", event.get("end", {}).get("date", "Unknown"))
+                color_id = event.get("colorId", "default")
+                logger.info(f"  Event {idx + 1}: {event.get('summary', 'Untitled')}")
+                logger.info(f"    Time: {start} to {end}")
+                logger.info(f"    Color ID: {color_id}")
+        else:
+            logger.info("=== NO EXISTING CALENDAR EVENTS ===")
 
         # Generate schedule with AI or fallback to rule-based
         schedule_data = None
@@ -267,7 +428,7 @@ Provide a complete schedule for the entire week. Be practical and consider energ
         if self.anthropic_client:
             logger.info("Attempting generation with Claude (Anthropic)...")
             schedule_data = await self._generate_with_claude(
-                preferences, goals, calendar_events, week_start_date, modification_request
+                preferences, goals, calendar_events, week_start_date, workouts, modification_request
             )
             if schedule_data:
                 algorithm = "claude-3-sonnet-20240229"
@@ -276,7 +437,7 @@ Provide a complete schedule for the entire week. Be practical and consider energ
         if not schedule_data and self.openai_client:
             logger.info("Attempting generation with OpenAI (GPT-4o)...")
             schedule_data = await self._generate_with_openai(
-                preferences, goals, calendar_events, week_start_date, modification_request
+                preferences, goals, calendar_events, week_start_date, workouts, modification_request
             )
             if schedule_data:
                 algorithm = "gpt-4o"
@@ -285,7 +446,7 @@ Provide a complete schedule for the entire week. Be practical and consider energ
         if not schedule_data:
             logger.warning("Using fallback rule-based scheduling (no API key or AI failure)")
             schedule_data = self._generate_fallback_schedule(
-                preferences, goals, calendar_events, week_start_date
+                preferences, goals, calendar_events, week_start_date, workouts
             )
 
         # Save suggestion to database
@@ -314,11 +475,12 @@ Provide a complete schedule for the entire week. Be practical and consider energ
         goals: List[ListItem],
         calendar_events: List[Dict[str, Any]],
         week_start: date,
+        workouts: List[Workout] = None,
         modification_request: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate schedule using Claude API."""
         logger.info("Building prompt for Claude...")
-        prompt = self._build_scheduling_prompt(preferences, goals, calendar_events, week_start, modification_request)
+        prompt = self._build_scheduling_prompt(preferences, goals, calendar_events, week_start, workouts, modification_request)
 
         try:
             logger.info("Sending request to Anthropic API...")
@@ -362,11 +524,12 @@ Provide a complete schedule for the entire week. Be practical and consider energ
         goals: List[ListItem],
         calendar_events: List[Dict[str, Any]],
         week_start: date,
+        workouts: List[Workout] = None,
         modification_request: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate schedule using OpenAI API."""
         logger.info("Building prompt for OpenAI...")
-        prompt = self._build_scheduling_prompt(preferences, goals, calendar_events, week_start, modification_request)
+        prompt = self._build_scheduling_prompt(preferences, goals, calendar_events, week_start, workouts, modification_request)
 
         try:
             logger.info("Sending request to OpenAI API...")
@@ -403,14 +566,64 @@ Provide a complete schedule for the entire week. Be practical and consider energ
         goals: List[ListItem],
         calendar_events: List[Dict[str, Any]],
         week_start: date,
+        workouts: List[Workout] = None,
     ) -> Dict[str, Any]:
         """Generate a basic schedule without AI (fallback mode)."""
         logger.info("Generating rule-based fallback schedule...")
         events = []
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-        # Add workouts based on preferences
-        if preferences and preferences.workout_days:
+        # Add specific workouts from the user's workout plan
+        if workouts and preferences and preferences.workout_days:
+            workout_time = "07:00" if preferences.workout_preferred_time == "Morning" else "18:00"
+            duration = 45  # Default 45 minutes
+
+            # Schedule each workout from the plan on preferred days
+            workout_day_index = 0
+            for workout in workouts:
+                # Find the next preferred day
+                for i, day in enumerate(days):
+                    if day in preferences.workout_days:
+                        if workout_day_index == 0 or i > workout_day_index:
+                            workout_day_index = i
+                            event_date = week_start + timedelta(days=i)
+                            start_dt = datetime.combine(event_date, datetime.strptime(workout_time, "%H:%M").time())
+                            end_dt = start_dt + timedelta(minutes=duration)
+
+                            # Build description from workout description and exercises
+                            exercises_desc = []
+                            for section in workout.sections:
+                                for exercise in section.exercises:
+                                    if exercise.sets and exercise.reps:
+                                        exercises_desc.append(f"{exercise.name}: {exercise.sets} sets × {exercise.reps} reps")
+                                    elif exercise.duration:
+                                        exercises_desc.append(f"{exercise.name}: {exercise.duration}")
+                                    else:
+                                        exercises_desc.append(exercise.name)
+
+                            # Combine workout description with exercises
+                            full_description = ""
+                            if workout.description:
+                                full_description = workout.description + "\n\n"
+                            if exercises_desc:
+                                full_description += "Exercises: " + ", ".join(exercises_desc)
+                            if not full_description:
+                                full_description = f"{duration}-minute workout session"
+
+                            events.append({
+                                "title": workout.title,
+                                "activity_type": "workout",
+                                "day": day,
+                                "start_time": start_dt.isoformat(),
+                                "end_time": end_dt.isoformat(),
+                                "description": full_description,
+                                "is_flexible": True,
+                                "priority": 7,
+                                "color": "#4CAF50",
+                            })
+                            break
+        # Fallback to generic workouts if no specific workouts in plan
+        elif preferences and preferences.workout_days:
             workout_time = "07:00" if preferences.workout_preferred_time == "Morning" else "18:00"
             duration = 45  # Default 45 minutes
 
@@ -432,13 +645,20 @@ Provide a complete schedule for the entire week. Be practical and consider energ
                         "color": "#4CAF50",
                     })
 
-        # Add commute blocks
+        # Add commute blocks with podcast recommendations
         if preferences and preferences.commute_start:
+            podcast_topics = preferences.podcast_topics or []
             for i, day in enumerate(days[:5]):  # Weekdays only
                 event_date = week_start + timedelta(days=i)
                 try:
                     commute_start = datetime.strptime(preferences.commute_start, "%H:%M").time()
                     commute_end = datetime.strptime(preferences.commute_end or "09:00", "%H:%M").time()
+
+                    # Create specific podcast suggestion for commute
+                    suggested_podcast = None
+                    if podcast_topics:
+                        topic = podcast_topics[i % len(podcast_topics)]
+                        suggested_podcast = f"{topic} Daily - Perfect for your commute"
 
                     events.append({
                         "title": "Morning Commute",
@@ -446,10 +666,10 @@ Provide a complete schedule for the entire week. Be practical and consider energ
                         "day": day,
                         "start_time": datetime.combine(event_date, commute_start).isoformat(),
                         "end_time": datetime.combine(event_date, commute_end).isoformat(),
-                        "description": "Commute time - great for podcasts!",
+                        "description": f"Commute time - great for podcasts!{' Listen to ' + topic + ' content.' if podcast_topics else ''}",
                         "is_flexible": False,
                         "priority": 8,
-                        "suggested_podcast": (preferences.podcast_topics or ["News"])[0] if preferences.podcast_topics else None,
+                        "suggested_podcast": suggested_podcast,
                         "color": "#2196F3",
                     })
                 except ValueError:
@@ -497,6 +717,124 @@ Provide a complete schedule for the entire week. Be practical and consider energ
                 "color": "#FF9800",
             })
             task_slot_hour += 1  # Stagger task times
+
+        # Add meal times with podcast suggestions (podcasts paired with meals, not standalone)
+        if preferences:
+            podcast_topics = preferences.podcast_topics or []
+            meal_duration = 30  # Default 30 minutes
+            if preferences.meal_duration:
+                try:
+                    meal_duration = int(preferences.meal_duration)
+                except ValueError:
+                    meal_duration = 30
+
+            # Schedule lunch for weekdays with podcast suggestions
+            for i, day in enumerate(days[:5]):  # Weekdays only
+                event_date = week_start + timedelta(days=i)
+                start_dt = datetime.combine(event_date, datetime.strptime("12:30", "%H:%M").time())
+                end_dt = start_dt + timedelta(minutes=meal_duration)
+
+                # Create podcast suggestion for meal if user has podcast preferences
+                suggested_podcast = None
+                if podcast_topics:
+                    topic = podcast_topics[i % len(podcast_topics)]
+                    podcast_suggestions = {
+                        "Technology": f"Tech Today - Latest in technology innovations",
+                        "Health & Wellness": f"Healthy Living - Tips for better wellness",
+                        "Business": f"Business Insider - Entrepreneurship insights",
+                        "Science": f"Science Weekly - Research breakthroughs",
+                        "Sports": f"Sports Talk - Game analysis and interviews",
+                        "Politics": f"Political Pulse - Current events discussion",
+                        "Comedy": f"Comedy Hour - Laugh and unwind",
+                        "True Crime": f"Crime Chronicles - Investigative stories",
+                        "History": f"History Uncovered - Stories from the past",
+                        "Arts & Culture": f"Culture Cast - Art and music",
+                        "Education": f"Learn Something New - Educational content",
+                        "News": f"Daily News Brief - Stay informed",
+                    }
+                    suggested_podcast = podcast_suggestions.get(topic, f"{topic} Podcast - {topic.lower()} topics")
+
+                events.append({
+                    "title": "Lunch",
+                    "activity_type": "meal",
+                    "day": day,
+                    "start_time": start_dt.isoformat(),
+                    "end_time": end_dt.isoformat(),
+                    "description": f"Lunch break{' - enjoy a podcast while eating' if suggested_podcast else ''}",
+                    "is_flexible": True,
+                    "priority": 5,
+                    "suggested_podcast": suggested_podcast,
+                    "color": "#FF9800",
+                })
+
+        # Add chore blocks with podcast suggestions
+        if preferences and preferences.chore_time:
+            podcast_topics = preferences.podcast_topics or []
+            chore_duration = 60  # Default 60 minutes
+            if preferences.chore_duration:
+                # Parse duration like "1h 30m" or just minutes
+                try:
+                    duration_str = preferences.chore_duration.lower()
+                    total_minutes = 0
+                    if 'h' in duration_str:
+                        hours_match = duration_str.split('h')[0].strip()
+                        total_minutes += int(hours_match) * 60
+                        if 'm' in duration_str:
+                            mins_part = duration_str.split('h')[1].replace('m', '').strip()
+                            if mins_part:
+                                total_minutes += int(mins_part)
+                    elif 'm' in duration_str:
+                        total_minutes = int(duration_str.replace('m', '').strip())
+                    else:
+                        total_minutes = int(duration_str)
+                    chore_duration = total_minutes if total_minutes > 0 else 60
+                except ValueError:
+                    chore_duration = 60
+
+            # Determine chore days based on preference
+            chore_day_indices = []
+            chore_time_str = "10:00"  # Default morning
+            if "weekend" in preferences.chore_time.lower():
+                chore_day_indices = [5, 6]  # Saturday, Sunday
+                if "morning" in preferences.chore_time.lower():
+                    chore_time_str = "10:00"
+                elif "afternoon" in preferences.chore_time.lower():
+                    chore_time_str = "14:00"
+            elif "weekday" in preferences.chore_time.lower():
+                if preferences.chore_distribution == "Distributed throughout the week":
+                    chore_day_indices = [0, 2, 4]  # Mon, Wed, Fri
+                else:
+                    chore_day_indices = [0]  # Just Monday
+                if "evening" in preferences.chore_time.lower():
+                    chore_time_str = "18:00"
+                else:
+                    chore_time_str = "10:00"
+            else:
+                chore_day_indices = [5]  # Default to Saturday
+
+            for idx, day_idx in enumerate(chore_day_indices):
+                event_date = week_start + timedelta(days=day_idx)
+                start_dt = datetime.combine(event_date, datetime.strptime(chore_time_str, "%H:%M").time())
+                end_dt = start_dt + timedelta(minutes=chore_duration)
+
+                # Create podcast suggestion for chores
+                suggested_podcast = None
+                if podcast_topics:
+                    topic = podcast_topics[idx % len(podcast_topics)]
+                    suggested_podcast = f"{topic} Podcast - Make chores enjoyable"
+
+                events.append({
+                    "title": "House Chores",
+                    "activity_type": "chore",
+                    "day": days[day_idx],
+                    "start_time": start_dt.isoformat(),
+                    "end_time": end_dt.isoformat(),
+                    "description": f"Cleaning and organizing{' - listen to podcasts while working' if suggested_podcast else ''}",
+                    "is_flexible": True,
+                    "priority": 5,
+                    "suggested_podcast": suggested_podcast,
+                    "color": "#795548",
+                })
 
         return {
             "scheduled_events": events,
