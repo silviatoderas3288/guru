@@ -41,6 +41,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
     choreTime: [],
     choreDuration: [],
     choreDistribution: [],
+    choreList: [],
     mealDuration: [],
   },
   isModalVisible: false,
@@ -96,6 +97,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
             choreTime: data.chore_time ? [data.chore_time] : [],
             choreDuration: data.chore_duration ? [data.chore_duration] : [],
             choreDistribution: data.chore_distribution ? [data.chore_distribution] : [],
+            choreList: data.chore_list || [],
             mealDuration: data.meal_duration ? [data.meal_duration] : [],
           },
           loading: false,
@@ -143,6 +145,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
           chore_time: preferences.choreTime[0] || null,
           chore_duration: preferences.choreDuration[0] || null,
           chore_distribution: preferences.choreDistribution[0] || null,
+          chore_list: preferences.choreList,
           meal_duration: preferences.mealDuration[0] || null,
         }),
       });

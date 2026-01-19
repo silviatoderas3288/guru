@@ -23,9 +23,11 @@ class ListItem(BaseModel):
     completed = Column(Boolean, default=False)
     item_type = Column(SQLEnum(ListItemType, name='listitemtype', values_callable=lambda obj: [e.value for e in obj]), nullable=False)
     calendar_event_id = Column(String, nullable=True)  # Google Calendar event ID
+    parent_goal_id = Column(UUID(as_uuid=True), ForeignKey("list_items.id"), nullable=True)  # For linking chore todos to parent weekly goal
 
-    # Relationship
+    # Relationships
     user = relationship("User", back_populates="list_items")
+    parent_goal = relationship("ListItem", remote_side="ListItem.id", backref="child_items", foreign_keys=[parent_goal_id])
 
     def __repr__(self):
         return f"<ListItem(id={self.id}, text={self.text}, type={self.item_type}, completed={self.completed})>"

@@ -57,6 +57,7 @@ class GenerateScheduleRequest(BaseModel):
     includeGoals: bool = True
     forceRegenerate: bool = False
     modificationRequest: Optional[str] = None  # Natural language request to modify the schedule
+    email: Optional[str] = None  # Email to identify the user
 
 
 class TaskFeedback(BaseModel):

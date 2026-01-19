@@ -942,6 +942,126 @@ const durationStyles = StyleSheet.create({
   },
 });
 
+// List Input Preference Component
+interface ListInputPreferenceProps {
+  label: string;
+  items: string[];
+  onItemsChange: (items: string[]) => void;
+  placeholder?: string;
+  labelColor?: string;
+}
+
+const ListInputPreference: React.FC<ListInputPreferenceProps> = ({
+  label,
+  items,
+  onItemsChange,
+  placeholder = 'Add item...',
+  labelColor = '#4D5AEE'
+}) => {
+  const [newItem, setNewItem] = useState('');
+
+  const handleAddItem = () => {
+    if (newItem.trim()) {
+      onItemsChange([...items, newItem.trim()]);
+      setNewItem('');
+    }
+  };
+
+  const handleRemoveItem = (index: number) => {
+    const newItems = [...items];
+    newItems.splice(index, 1);
+    onItemsChange(newItems);
+  };
+
+  return (
+    <View style={listInputStyles.container}>
+      <View style={listInputStyles.labelContainer}>
+        <Text style={[listInputStyles.label, { color: labelColor }]}>{label}</Text>
+        <Image
+          source={require('../../assets/under_pref.png')}
+          style={listInputStyles.underline}
+          resizeMode="contain"
+        />
+      </View>
+      
+      {/* List of items */}
+      {items.map((item, index) => (
+        <View key={index} style={listInputStyles.itemRow}>
+          <Text style={listInputStyles.itemText}>{item}</Text>
+          <TouchableOpacity onPress={() => handleRemoveItem(index)}>
+            <Ionicons name="close-circle" size={24} color="#FF9D00" />
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      {/* Add new item input */}
+      <ImageBackground
+        source={require('../../assets/box.png')}
+        style={listInputStyles.inputBox}
+        resizeMode="stretch"
+      >
+        <TextInput
+          style={listInputStyles.input}
+          value={newItem}
+          onChangeText={setNewItem}
+          placeholder={placeholder}
+          placeholderTextColor="#999"
+          onSubmitEditing={handleAddItem}
+        />
+        <TouchableOpacity onPress={handleAddItem}>
+          <Ionicons name="add-circle" size={28} color="#4D5AEE" />
+        </TouchableOpacity>
+      </ImageBackground>
+    </View>
+  );
+};
+
+const listInputStyles = StyleSheet.create({
+  container: {
+    marginBottom: 20,
+  },
+  labelContainer: {
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 4,
+  },
+  underline: {
+    width: 150,
+    height: 15,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  itemText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    flex: 1,
+  },
+  inputBox: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+  },
+});
+
 export const PageFive: React.FC = () => {
   const { toggleSettingsModal, preferences, updatePreference, fetchPreferences, loading } = usePreferencesStore();
   const [user, setUser] = useState<GoogleUser | null>(null);
@@ -1035,16 +1155,16 @@ export const PageFive: React.FC = () => {
       setAiScheduleLoading(true);
       const events = aiScheduleResult.scheduledEvents;
       let addedCount = 0;
+      
+      // Track parent chore goal if needed
+      let parentChoreGoalId: string | undefined = undefined;
+      const isDistributedChores = preferences.choreDistribution && preferences.choreDistribution[0] === 'Distributed throughout the week';
 
       for (const event of events) {
-        // 1. Create Weekly Goal
-        const newItem = await ListItemApiService.createListItem({
-          text: event.title,
-          completed: false,
-          item_type: ListItemType.WEEKLY_GOAL,
-        });
+        let newItem;
+        let calendarEventId: string | undefined = undefined;
 
-        // 2. Create Calendar Event (if times are present)
+        // 1. Create Calendar Event FIRST (if times are present)
         if (event.start_time && event.end_time) {
           try {
             const calendarEvent = await CalendarApiService.createCalendarEvent({
@@ -1054,16 +1174,47 @@ export const PageFive: React.FC = () => {
               end_time: event.end_time,
               // Map AI colors or priority to Google Calendar colors if needed
             });
-
-            // 3. Link Weekly Goal to Calendar Event
-            await ListItemApiService.updateListItem(newItem.id, {
-              calendar_event_id: calendarEvent.id,
-            });
+            calendarEventId = calendarEvent.id;
           } catch (calError) {
             console.error('Failed to create calendar event for:', event.title, calError);
             // Continue even if calendar sync fails
           }
         }
+
+        // 2. Create ListItem (Goal/Todo) ONLY if it's NOT a meal
+        // Meals are calendar-only events per user request
+        if (event.activity_type !== 'meal') {
+            // Special logic for distributed chores
+            if (event.activity_type === 'chore' && isDistributedChores) {
+               // Create parent goal if not exists
+               if (!parentChoreGoalId) {
+                 const parent = await ListItemApiService.createListItem({
+                   text: "Weekly Chores",
+                   completed: false,
+                   item_type: ListItemType.WEEKLY_GOAL
+                 });
+                 parentChoreGoalId = parent.id;
+               }
+               
+               // Create child TODO item
+               newItem = await ListItemApiService.createListItem({
+                 text: event.title,
+                 completed: false,
+                 item_type: ListItemType.TODO,
+                 parent_goal_id: parentChoreGoalId,
+                 calendar_event_id: calendarEventId // Link to calendar event
+               });
+            } else {
+               // Default logic: Create Weekly Goal
+               newItem = await ListItemApiService.createListItem({
+                 text: event.title,
+                 completed: false,
+                 item_type: ListItemType.WEEKLY_GOAL,
+                 calendar_event_id: calendarEventId // Link to calendar event
+               });
+            }
+        }
+        
         addedCount++;
       }
 
@@ -1285,6 +1436,13 @@ export const PageFive: React.FC = () => {
               selectedOptions={preferences.choreDistribution}
               onSelectionChange={(selected) => updatePreference('choreDistribution', selected)}
               multiSelect={false}
+              labelColor="#4D5AEE"
+            />
+            <ListInputPreference
+              label="Chore List"
+              items={preferences.choreList || []}
+              onItemsChange={(items) => updatePreference('choreList', items)}
+              placeholder="Add chore (e.g. Laundry)"
               labelColor="#4D5AEE"
             />
           </CollapsibleSection>

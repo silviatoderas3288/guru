@@ -44,6 +44,23 @@ async def startup_event():
     logger.info(f"OpenAI (GPT-4): {'Available' if openai_key else 'Not Configured'}")
     logger.info("--------------------------")
 
+    # Run database migrations
+    try:
+        from alembic.config import Config
+        from alembic import command
+        
+        logger.info("Running database migrations...")
+        alembic_ini_path = backend_dir / "alembic.ini"
+        alembic_cfg = Config(str(alembic_ini_path))
+        # Ensure script location is absolute to avoid CWD issues
+        alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+        
+        # Run upgrade
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Database migrations completed successfully.")
+    except Exception as e:
+        logger.error(f"Error running database migrations: {e}")
+
 @app.get("/")
 async def root():
     """Root endpoint."""

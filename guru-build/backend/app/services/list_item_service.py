@@ -21,7 +21,9 @@ def create_list_item(db: Session, item: ListItemCreate, user_id: UUID) -> ListIt
         user_id=user_id,
         text=item.text,
         completed=item.completed,
-        item_type=item.item_type
+        item_type=item.item_type,
+        calendar_event_id=item.calendar_event_id,
+        parent_goal_id=UUID(str(item.parent_goal_id)) if item.parent_goal_id else None
     )
     db.add(db_item)
     db.commit()
@@ -41,10 +43,40 @@ def update_list_item(db: Session, item_id: UUID, item: ListItemUpdate, user_id: 
 
     if item.text is not None:
         db_item.text = item.text
-    if item.completed is not None:
-        db_item.completed = item.completed
     if item.calendar_event_id is not None:
         db_item.calendar_event_id = item.calendar_event_id
+
+    # Handle completion status change with cascading logic
+    if item.completed is not None and item.completed != db_item.completed:
+        db_item.completed = item.completed
+        
+        # 1. Downward cascade: If parent changed, update all children
+        # Note: db_item.child_items is available due to relationship
+        if db_item.child_items:
+            for child in db_item.child_items:
+                child.completed = item.completed
+
+        # 2. Upward cascade: If child changed, check/update parent
+        if db_item.parent_goal_id:
+            parent = db_item.parent_goal
+            if parent:
+                if item.completed:
+                    # Child marked completed: Check if ALL siblings are completed
+                    # siblings include the current item (which is updated in session)
+                    # We iterate over parent.child_items to check status
+                    all_completed = True
+                    for sibling in parent.child_items:
+                        # If sibling is the current item, use the new value (it's already set on db_item)
+                        # SQLAlchemy identity map ensures sibling is db_item if IDs match
+                        if not sibling.completed:
+                            all_completed = False
+                            break
+                    
+                    if all_completed:
+                        parent.completed = True
+                else:
+                    # Child marked incomplete: Parent must be incomplete
+                    parent.completed = False
 
     db.commit()
     db.refresh(db_item)

@@ -35,7 +35,18 @@ async def generate_schedule(
     - Uses AI to intelligently schedule tasks, workouts, meals, etc.
     - Returns a suggested schedule with reasoning and warnings
     """
-    service = SchedulingAgentService(db, current_user)
+    # If email is provided in request, look up that specific user
+    user = current_user
+    if request.email:
+        found_user = db.query(User).filter(User.email == request.email).first()
+        if found_user:
+            user = found_user
+        else:
+            # If user not found by email, create one (similar to preferences logic)
+            from app.routes.preferences import get_or_create_user
+            user = get_or_create_user(db, request.email)
+
+    service = SchedulingAgentService(db, user)
 
     try:
         result = await service.generate_schedule(

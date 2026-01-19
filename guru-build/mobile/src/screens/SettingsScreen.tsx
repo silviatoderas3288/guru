@@ -1,9 +1,11 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Image, ImageBackground, Modal, Pressable, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { GoogleAuthService } from '../services/googleAuth';
+import { PreferenceDropdown } from '../components/PreferenceDropdown';
+import { usePreferencesStore } from '../store/usePreferencesStore';
 
 const SettingsIcon = () => (
   <Svg width="19" height="20" viewBox="0 0 19 20" fill="none">
@@ -16,7 +18,910 @@ const SettingsIcon = () => (
   </Svg>
 );
 
+// Reusable Time Range Dropdown Component
+interface TimeRangeDropdownProps {
+  label: string;
+  startTime: string;
+  endTime: string;
+  onStartTimeChange: (time: string) => void;
+  onEndTimeChange: (time: string) => void;
+  startOptions?: string[];
+  endOptions?: string[];
+  labelColor?: string;
+}
+
+const TimeRangeDropdown: React.FC<TimeRangeDropdownProps> = ({
+  label,
+  startTime,
+  endTime,
+  onStartTimeChange,
+  onEndTimeChange,
+  startOptions = ['08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM'],
+  endOptions = ['11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM'],
+  labelColor = '#4D5AEE'
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [tempStartTime, setTempStartTime] = useState('');
+  const [tempEndTime, setTempEndTime] = useState('');
+
+  const handleOpen = () => {
+    setTempStartTime(startTime);
+    setTempEndTime(endTime);
+    setIsOpen(true);
+  };
+
+  const handleDone = () => {
+    if (tempStartTime) onStartTimeChange(tempStartTime);
+    if (tempEndTime) onEndTimeChange(tempEndTime);
+    setIsOpen(false);
+  };
+
+  const handleCancel = () => {
+    setTempStartTime(startTime);
+    setTempEndTime(endTime);
+    setIsOpen(false);
+  };
+
+  const displayValue = startTime && endTime
+    ? `${startTime} - ${endTime}`
+    : `Select ${label.toLowerCase()}`;
+
+  return (
+    <View style={dropdownStyles.container}>
+      <View style={dropdownStyles.labelContainer}>
+        <Text style={[dropdownStyles.label, { color: labelColor }]}>{label}</Text>
+        <Image
+          source={require('../../assets/under_pref.png')}
+          style={dropdownStyles.underline}
+          resizeMode="contain"
+        />
+      </View>
+
+      <TouchableOpacity onPress={handleOpen}>
+        <ImageBackground
+          source={require('../../assets/box.png')}
+          style={dropdownStyles.dropdownBox}
+          resizeMode="stretch"
+        >
+          <Text style={dropdownStyles.selectedText} numberOfLines={1}>
+            {displayValue}
+          </Text>
+          <Image
+            source={require('../../assets/arrow.png')}
+            style={[
+              dropdownStyles.arrow,
+              isOpen && dropdownStyles.arrowRotated
+            ]}
+            resizeMode="contain"
+          />
+        </ImageBackground>
+      </TouchableOpacity>
+
+      <Modal
+        visible={isOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCancel}
+      >
+        <Pressable
+          style={dropdownStyles.modalOverlay}
+          onPress={handleCancel}
+        >
+          <Pressable style={dropdownStyles.modalContent}>
+            <ScrollView style={dropdownStyles.optionsList}>
+              <View style={dropdownStyles.twoColumnContainer}>
+                <View style={dropdownStyles.column}>
+                  <Text style={dropdownStyles.columnHeader}>Start Time</Text>
+                  {startOptions.map((time) => {
+                    const isSelected = tempStartTime === time;
+                    return (
+                      <TouchableOpacity
+                        key={time}
+                        style={[
+                          dropdownStyles.optionItem,
+                          isSelected && dropdownStyles.optionItemSelected
+                        ]}
+                        onPress={() => setTempStartTime(time)}
+                      >
+                        <Text style={[
+                          dropdownStyles.optionText,
+                          isSelected && dropdownStyles.optionTextSelected
+                        ]}>
+                          {time}
+                        </Text>
+                        {isSelected && (
+                          <Text style={dropdownStyles.checkmark}>✓</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <View style={dropdownStyles.column}>
+                  <Text style={dropdownStyles.columnHeader}>End Time</Text>
+                  {endOptions.map((time) => {
+                    const isSelected = tempEndTime === time;
+                    return (
+                      <TouchableOpacity
+                        key={time}
+                        style={[
+                          dropdownStyles.optionItem,
+                          isSelected && dropdownStyles.optionItemSelected
+                        ]}
+                        onPress={() => setTempEndTime(time)}
+                      >
+                        <Text style={[
+                          dropdownStyles.optionText,
+                          isSelected && dropdownStyles.optionTextSelected
+                        ]}>
+                          {time}
+                        </Text>
+                        {isSelected && (
+                          <Text style={dropdownStyles.checkmark}>✓</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={dropdownStyles.doneButton}
+              onPress={handleDone}
+            >
+              <Text style={dropdownStyles.doneButtonText}>Done</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+};
+
+const dropdownStyles = StyleSheet.create({
+  container: {
+    marginBottom: 20,
+  },
+  labelContainer: {
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 4,
+  },
+  underline: {
+    width: 150,
+    height: 15,
+  },
+  dropdownBox: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+  },
+  selectedText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    marginRight: 10,
+  },
+  arrow: {
+    width: 20,
+    height: 20,
+  },
+  arrowRotated: {
+    transform: [{ rotate: '180deg' }],
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'rgba(77, 90, 238, 0.70)',
+    borderRadius: 20,
+    padding: 20,
+    width: '85%',
+    maxHeight: '60%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  optionsList: {
+    maxHeight: 300,
+  },
+  twoColumnContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  column: {
+    flex: 1,
+    paddingHorizontal: 5,
+  },
+  columnHeader: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    fontWeight: '700',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  optionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  optionItemSelected: {
+    backgroundColor: 'transparent',
+  },
+  optionText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#FFF',
+  },
+  optionTextSelected: {
+    color: '#FF9D00',
+    fontWeight: '600',
+  },
+  checkmark: {
+    fontSize: 20,
+    color: '#FF9D00',
+    fontWeight: 'bold',
+  },
+  doneButton: {
+    backgroundColor: '#FF9D00',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  doneButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+});
+
+// Collapsible Section Component
+interface CollapsibleSectionProps {
+  title: string;
+  children: React.ReactNode;
+  defaultExpanded?: boolean;
+  transparent?: boolean;
+}
+
+const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, children, defaultExpanded = false, transparent = false }) => {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  return (
+    <View style={[collapsibleStyles.container, transparent && collapsibleStyles.containerTransparent]}>
+      <TouchableOpacity
+        onPress={() => setIsExpanded(!isExpanded)}
+        activeOpacity={0.7}
+      >
+        <ImageBackground
+          source={require('../../assets/box.png')}
+          style={collapsibleStyles.headerBox}
+          resizeMode="stretch"
+          tintColor="#4D5AEE"
+        >
+          <Text style={collapsibleStyles.title}>{title}</Text>
+          <Image
+            source={require('../../assets/arrow.png')}
+            style={[
+              collapsibleStyles.arrow,
+              isExpanded && collapsibleStyles.arrowExpanded
+            ]}
+            resizeMode="contain"
+          />
+        </ImageBackground>
+      </TouchableOpacity>
+      {isExpanded && (
+        <View style={collapsibleStyles.content}>
+          {children}
+        </View>
+      )}
+    </View>
+  );
+};
+
+const collapsibleStyles = StyleSheet.create({
+  container: {
+    marginBottom: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  containerTransparent: {
+    backgroundColor: 'transparent',
+  },
+  headerBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    height: 60,
+  },
+  title: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    flex: 1,
+  },
+  arrow: {
+    width: 20,
+    height: 20,
+    tintColor: '#FF9D00',
+  },
+  arrowExpanded: {
+    transform: [{ rotate: '180deg' }],
+  },
+  content: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+});
+
+// Text Input Preference Component
+interface TextInputPreferenceProps {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder?: string;
+  suffix?: string;
+  keyboardType?: 'default' | 'numeric';
+  labelColor?: string;
+}
+
+const TextInputPreference: React.FC<TextInputPreferenceProps> = ({
+  label,
+  value,
+  onChangeText,
+  placeholder = '',
+  suffix = '',
+  keyboardType = 'default',
+  labelColor = '#4D5AEE'
+}) => {
+  return (
+    <View style={textInputStyles.container}>
+      <View style={textInputStyles.labelContainer}>
+        <Text style={[textInputStyles.label, { color: labelColor }]}>{label}</Text>
+        <Image
+          source={require('../../assets/under_pref.png')}
+          style={textInputStyles.underline}
+          resizeMode="contain"
+        />
+      </View>
+      <ImageBackground
+        source={require('../../assets/box.png')}
+        style={textInputStyles.inputBox}
+        resizeMode="stretch"
+      >
+        <TextInput
+          style={textInputStyles.input}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor="#999"
+          keyboardType={keyboardType}
+        />
+        {suffix ? <Text style={textInputStyles.suffix}>{suffix}</Text> : null}
+      </ImageBackground>
+    </View>
+  );
+};
+
+const textInputStyles = StyleSheet.create({
+  container: {
+    marginBottom: 20,
+  },
+  labelContainer: {
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 4,
+  },
+  underline: {
+    width: 150,
+    height: 15,
+  },
+  inputBox: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  input: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+  },
+  suffix: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#999',
+    marginLeft: 8,
+  },
+});
+
+// Time Input with Dropdown + Custom Input Component
+interface TimeInputDropdownProps {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  options: string[];
+  labelColor?: string;
+}
+
+const TimeInputDropdown: React.FC<TimeInputDropdownProps> = ({
+  label,
+  value,
+  onValueChange,
+  options,
+  labelColor = '#4D5AEE'
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isCustom, setIsCustom] = useState(false);
+  const [customValue, setCustomValue] = useState('');
+
+  const handleSelectOption = (option: string) => {
+    if (option === 'Custom') {
+      setIsCustom(true);
+    } else {
+      onValueChange(option);
+      setIsOpen(false);
+      setIsCustom(false);
+    }
+  };
+
+  const handleCustomSubmit = () => {
+    if (customValue.trim()) {
+      onValueChange(customValue.trim());
+    }
+    setIsOpen(false);
+    setIsCustom(false);
+    setCustomValue('');
+  };
+
+  const displayValue = value || `Select ${label.toLowerCase()}`;
+
+  return (
+    <View style={timeInputStyles.container}>
+      <View style={timeInputStyles.labelContainer}>
+        <Text style={[timeInputStyles.label, { color: labelColor }]}>{label}</Text>
+        <Image
+          source={require('../../assets/under_pref.png')}
+          style={timeInputStyles.underline}
+          resizeMode="contain"
+        />
+      </View>
+
+      <TouchableOpacity onPress={() => setIsOpen(true)}>
+        <ImageBackground
+          source={require('../../assets/box.png')}
+          style={timeInputStyles.dropdownBox}
+          resizeMode="stretch"
+        >
+          <Text style={timeInputStyles.selectedText} numberOfLines={1}>
+            {displayValue}
+          </Text>
+          <Image
+            source={require('../../assets/arrow.png')}
+            style={[
+              timeInputStyles.arrow,
+              isOpen && timeInputStyles.arrowRotated
+            ]}
+            resizeMode="contain"
+          />
+        </ImageBackground>
+      </TouchableOpacity>
+
+      <Modal
+        visible={isOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => { setIsOpen(false); setIsCustom(false); }}
+      >
+        <Pressable
+          style={timeInputStyles.modalOverlay}
+          onPress={() => { setIsOpen(false); setIsCustom(false); }}
+        >
+          <Pressable style={timeInputStyles.modalContent}>
+            {isCustom ? (
+              <View style={timeInputStyles.customInputContainer}>
+                <Text style={timeInputStyles.customInputLabel}>Enter custom time (e.g. 7:30 AM)</Text>
+                <TextInput
+                  style={timeInputStyles.customInput}
+                  value={customValue}
+                  onChangeText={setCustomValue}
+                  placeholder="e.g. 7:30 AM"
+                  placeholderTextColor="#999"
+                  autoFocus
+                />
+                <View style={timeInputStyles.customButtonsRow}>
+                  <TouchableOpacity
+                    style={timeInputStyles.backButton}
+                    onPress={() => setIsCustom(false)}
+                  >
+                    <Text style={timeInputStyles.backButtonText}>Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={timeInputStyles.submitButton}
+                    onPress={handleCustomSubmit}
+                  >
+                    <Text style={timeInputStyles.submitButtonText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <>
+                <ScrollView style={timeInputStyles.optionsList}>
+                  {[...options, 'Custom'].map((option) => {
+                    const isSelected = value === option;
+                    return (
+                      <TouchableOpacity
+                        key={option}
+                        style={[
+                          timeInputStyles.optionItem,
+                          isSelected && timeInputStyles.optionItemSelected
+                        ]}
+                        onPress={() => handleSelectOption(option)}
+                      >
+                        <Text style={[
+                          timeInputStyles.optionText,
+                          isSelected && timeInputStyles.optionTextSelected
+                        ]}>
+                          {option}
+                        </Text>
+                        {isSelected && (
+                          <Text style={timeInputStyles.checkmark}>✓</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+                <TouchableOpacity
+                  style={timeInputStyles.doneButton}
+                  onPress={() => setIsOpen(false)}
+                >
+                  <Text style={timeInputStyles.doneButtonText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+};
+
+const timeInputStyles = StyleSheet.create({
+  container: {
+    marginBottom: 20,
+  },
+  labelContainer: {
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 4,
+  },
+  underline: {
+    width: 150,
+    height: 15,
+  },
+  dropdownBox: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+  },
+  selectedText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    marginRight: 10,
+  },
+  arrow: {
+    width: 20,
+    height: 20,
+  },
+  arrowRotated: {
+    transform: [{ rotate: '180deg' }],
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'rgba(77, 90, 238, 0.70)',
+    borderRadius: 20,
+    padding: 20,
+    width: '85%',
+    maxHeight: '60%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  optionsList: {
+    maxHeight: 300,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  optionItemSelected: {
+    backgroundColor: 'transparent',
+  },
+  optionText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#FFF',
+  },
+  optionTextSelected: {
+    color: '#FF9D00',
+    fontWeight: '600',
+  },
+  checkmark: {
+    fontSize: 20,
+    color: '#FF9D00',
+    fontWeight: 'bold',
+  },
+  doneButton: {
+    backgroundColor: '#FF9D00',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  doneButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  customInputContainer: {
+    padding: 10,
+  },
+  customInputLabel: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#FFF',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  customInput: {
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    padding: 15,
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    marginBottom: 15,
+  },
+  customButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  backButton: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    paddingVertical: 12,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  backButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+  },
+  submitButton: {
+    flex: 1,
+    backgroundColor: '#FF9D00',
+    paddingVertical: 12,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  submitButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+});
+
+// Duration Input Component (Hours and Minutes)
+interface DurationInputProps {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  labelColor?: string;
+}
+
+const DurationInput: React.FC<DurationInputProps> = ({
+  label,
+  value,
+  onValueChange,
+  labelColor = '#4D5AEE'
+}) => {
+  // Parse existing value (format: "Xh Ym" or "X hours Y minutes" or just numbers)
+  const parseValue = (val: string) => {
+    if (!val) return { hours: '', minutes: '' };
+
+    // Try to parse "Xh Ym" format
+    const hMatch = val.match(/(\d+)\s*h/i);
+    const mMatch = val.match(/(\d+)\s*m/i);
+
+    if (hMatch || mMatch) {
+      return {
+        hours: hMatch ? hMatch[1] : '',
+        minutes: mMatch ? mMatch[1] : ''
+      };
+    }
+
+    // If just a number, assume it's minutes
+    const numMatch = val.match(/^(\d+)$/);
+    if (numMatch) {
+      const totalMins = parseInt(numMatch[1]);
+      if (totalMins >= 60) {
+        return {
+          hours: Math.floor(totalMins / 60).toString(),
+          minutes: (totalMins % 60).toString()
+        };
+      }
+      return { hours: '', minutes: numMatch[1] };
+    }
+
+    return { hours: '', minutes: '' };
+  };
+
+  const { hours, minutes } = parseValue(value);
+  const [hoursValue, setHoursValue] = useState(hours);
+  const [minutesValue, setMinutesValue] = useState(minutes);
+
+  const updateValue = (newHours: string, newMinutes: string) => {
+    setHoursValue(newHours);
+    setMinutesValue(newMinutes);
+
+    const parts = [];
+    if (newHours && newHours !== '0') parts.push(`${newHours}h`);
+    if (newMinutes && newMinutes !== '0') parts.push(`${newMinutes}m`);
+
+    onValueChange(parts.join(' ') || '');
+  };
+
+  return (
+    <View style={durationStyles.container}>
+      <View style={durationStyles.labelContainer}>
+        <Text style={[durationStyles.label, { color: labelColor }]}>{label}</Text>
+        <Image
+          source={require('../../assets/under_pref.png')}
+          style={durationStyles.underline}
+          resizeMode="contain"
+        />
+      </View>
+      <View style={durationStyles.inputRow}>
+        <ImageBackground
+          source={require('../../assets/box.png')}
+          style={durationStyles.inputBox}
+          resizeMode="stretch"
+        >
+          <TextInput
+            style={durationStyles.input}
+            value={hoursValue}
+            onChangeText={(text) => updateValue(text.replace(/[^0-9]/g, ''), minutesValue)}
+            placeholder="0"
+            placeholderTextColor="#999"
+            keyboardType="numeric"
+            maxLength={2}
+          />
+          <Text style={durationStyles.unitLabel}>hours</Text>
+        </ImageBackground>
+        <ImageBackground
+          source={require('../../assets/box.png')}
+          style={durationStyles.inputBox}
+          resizeMode="stretch"
+        >
+          <TextInput
+            style={durationStyles.input}
+            value={minutesValue}
+            onChangeText={(text) => updateValue(hoursValue, text.replace(/[^0-9]/g, ''))}
+            placeholder="0"
+            placeholderTextColor="#999"
+            keyboardType="numeric"
+            maxLength={2}
+          />
+          <Text style={durationStyles.unitLabel}>min</Text>
+        </ImageBackground>
+      </View>
+    </View>
+  );
+};
+
+const durationStyles = StyleSheet.create({
+  container: {
+    marginBottom: 20,
+  },
+  labelContainer: {
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 4,
+  },
+  underline: {
+    width: 150,
+    height: 15,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  inputBox: {
+    flex: 1,
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 15,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    textAlign: 'center',
+  },
+  unitLabel: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#999',
+    marginLeft: 5,
+  },
+});
+
 export const SettingsScreen: React.FC = () => {
+  const { preferences, updatePreference, fetchPreferences } = usePreferencesStore();
+
+  useEffect(() => {
+    fetchPreferences();
+  }, []);
+
   const handleSignOut = async () => {
     Alert.alert(
       'Sign Out',
@@ -64,44 +969,116 @@ export const SettingsScreen: React.FC = () => {
 
           <Text style={styles.title}>Settings</Text>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Time Preferences</Text>
-            <Text style={styles.comingSoon}>Wake time, unwind time, sleep time</Text>
-          </View>
+          {/* Preferences Sections */}
+          <View style={styles.preferencesContainer}>
+            {/* Focus Time (App Blocking) */}
+            <CollapsibleSection title="Focus Time (App Blocking)" transparent={true}>
+              <TimeRangeDropdown
+                label="Focus Time"
+                startTime={preferences.focusTimeStart[0] || ''}
+                endTime={preferences.focusTimeEnd[0] || ''}
+                onStartTimeChange={(time) => updatePreference('focusTimeStart', [time])}
+                onEndTimeChange={(time) => updatePreference('focusTimeEnd', [time])}
+                labelColor="#4D5AEE"
+              />
+              <PreferenceDropdown
+                label="Blocked Apps"
+                options={['Instagram', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'Snapchat', 'Reddit', 'Netflix']}
+                selectedOptions={preferences.blockedApps}
+                onSelectionChange={(selected) => updatePreference('blockedApps', selected)}
+                multiSelect={true}
+                labelColor="#4D5AEE"
+              />
+            </CollapsibleSection>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Scheduling Options</Text>
-            <Text style={styles.comingSoon}>
-              Buffer time, morning/evening preference, weekend overflow
-            </Text>
-          </View>
+            {/* Meal Preferences */}
+            <CollapsibleSection title="Meal Preferences" transparent={true}>
+              <TextInputPreference
+                label="Meal Duration (minutes)"
+                value={preferences.mealDuration[0] || ''}
+                onChangeText={(text) => updatePreference('mealDuration', [text])}
+                placeholder="e.g. 30"
+                suffix="min"
+                keyboardType="numeric"
+                labelColor="#4D5AEE"
+              />
+            </CollapsibleSection>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Blocked Apps</Text>
-            <Text style={styles.comingSoon}>
-              Configure apps to block during unwind time
-            </Text>
-          </View>
+            {/* Sleep Schedule */}
+            <CollapsibleSection title="Sleep Schedule" transparent={true}>
+              <PreferenceDropdown
+                label="Bed Time"
+                options={['09:00 PM', '09:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM', '12:30 AM']}
+                selectedOptions={preferences.bedTime}
+                onSelectionChange={(selected) => updatePreference('bedTime', selected)}
+                multiSelect={false}
+                labelColor="#4D5AEE"
+              />
+              <TimeInputDropdown
+                label="Wake Time"
+                options={['05:00 AM', '05:30 AM', '06:00 AM', '06:30 AM', '07:00 AM', '07:30 AM', '08:00 AM', '08:30 AM', '09:00 AM']}
+                value={preferences.wakeTime[0] || ''}
+                onValueChange={(value) => updatePreference('wakeTime', [value])}
+                labelColor="#4D5AEE"
+              />
+              <TextInputPreference
+                label="Sleep Hours"
+                value={preferences.sleepHours[0] || ''}
+                onChangeText={(text) => updatePreference('sleepHours', [text])}
+                placeholder="e.g. 8"
+                suffix="hours"
+                keyboardType="numeric"
+                labelColor="#4D5AEE"
+              />
+            </CollapsibleSection>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Workout Preferences</Text>
-            <Text style={styles.comingSoon}>
-              Types, frequency, preferred times
-            </Text>
-          </View>
+            {/* Chore Preferences */}
+            <CollapsibleSection title="Chore Preferences" transparent={true}>
+              <PreferenceDropdown
+                label="Preferred Time"
+                options={['Weekday Mornings', 'Weekday Evenings', 'Saturday Morning', 'Sunday Morning', 'Weekend Afternoon']}
+                selectedOptions={preferences.choreTime}
+                onSelectionChange={(selected) => updatePreference('choreTime', selected)}
+                multiSelect={false}
+                labelColor="#4D5AEE"
+              />
+              <DurationInput
+                label="Duration"
+                value={preferences.choreDuration[0] || ''}
+                onValueChange={(value) => updatePreference('choreDuration', [value])}
+                labelColor="#4D5AEE"
+              />
+              <PreferenceDropdown
+                label="Distribution"
+                options={['Distributed throughout the week', 'All in one session']}
+                selectedOptions={preferences.choreDistribution}
+                onSelectionChange={(selected) => updatePreference('choreDistribution', selected)}
+                multiSelect={false}
+                labelColor="#4D5AEE"
+              />
+            </CollapsibleSection>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Media Preferences</Text>
-            <Text style={styles.comingSoon}>
-              Podcast genres, book genres, duration preferences
-            </Text>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Journal Settings</Text>
-            <Text style={styles.comingSoon}>
-              Weekly reflection day and time, prompts
-            </Text>
+            {/* Commute Preferences */}
+            <CollapsibleSection title="Commute Preferences" transparent={true}>
+              <TimeRangeDropdown
+                label="Commute Time"
+                startTime={preferences.commuteStartTime[0] || ''}
+                endTime={preferences.commuteEndTime[0] || ''}
+                onStartTimeChange={(time) => updatePreference('commuteStartTime', [time])}
+                onEndTimeChange={(time) => updatePreference('commuteEndTime', [time])}
+                startOptions={['06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '04:00 PM', '05:00 PM', '06:00 PM']}
+                endOptions={['07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '05:00 PM', '06:00 PM', '07:00 PM']}
+                labelColor="#4D5AEE"
+              />
+              <PreferenceDropdown
+                label="Commute Duration"
+                options={['Under 30 min', '30-60 min', '1-1.5 hours', 'Over 1.5 hours']}
+                selectedOptions={preferences.commuteDuration}
+                onSelectionChange={(selected) => updatePreference('commuteDuration', selected)}
+                multiSelect={false}
+                labelColor="#4D5AEE"
+              />
+            </CollapsibleSection>
           </View>
 
           <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
@@ -116,7 +1093,7 @@ export const SettingsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F7E8FF',
   },
   scrollView: {
     flex: 1,
@@ -145,36 +1122,35 @@ const styles = StyleSheet.create({
     borderRadius: 50,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
+    fontFamily: 'Margarine',
     fontWeight: 'bold',
     marginBottom: 24,
-    color: '#333',
+    color: '#4D5AEE',
   },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
-    color: '#333',
-  },
-  comingSoon: {
-    fontSize: 14,
-    color: '#999',
-    fontStyle: 'italic',
+  preferencesContainer: {
+    width: '100%',
+    paddingHorizontal: 4,
   },
   signOutButton: {
-    backgroundColor: '#FF3B30',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    backgroundColor: '#FF0808',
+    paddingVertical: 10,
+    paddingHorizontal: 25,
+    borderRadius: 20,
     alignItems: 'center',
+    alignSelf: 'center',
+    width: 150,
     marginTop: 32,
+    shadowColor: '#FF0808',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
   },
   signOutText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
+    fontFamily: 'Margarine',
     fontWeight: '600',
   },
 });

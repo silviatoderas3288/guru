@@ -29,6 +29,7 @@ export interface ListItem {
   completed: boolean;
   item_type: ListItemType;
   calendar_event_id?: string;
+  parent_goal_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -38,6 +39,7 @@ export interface ListItemCreate {
   completed: boolean;
   item_type: ListItemType;
   calendar_event_id?: string;
+  parent_goal_id?: string;
 }
 
 export interface ListItemUpdate {

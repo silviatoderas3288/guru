@@ -20,5 +20,6 @@ export interface UserPreferences {
   choreTime: string[];
   choreDuration: string[];
   choreDistribution: string[];
+  choreList: string[];
   mealDuration: string[];
 }

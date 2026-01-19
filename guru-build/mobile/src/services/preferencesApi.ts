@@ -24,6 +24,8 @@ export interface UserPreferences {
   commute_duration?: string;
   chore_time?: string;
   chore_duration?: string;
+  chore_distribution?: string;
+  chore_list?: string[];
 
   // General preferences
   notifications?: string;

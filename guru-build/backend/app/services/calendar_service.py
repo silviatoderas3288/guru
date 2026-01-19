@@ -29,6 +29,8 @@ class CalendarService:
             client_id: OAuth client ID (uses env var if not provided)
             client_secret: OAuth client secret (uses env var if not provided)
         """
+        self._timezone_cache = {}  # Cache for calendar timezones
+
         try:
             # Get client credentials from environment if not provided
             # These are needed for the Google library to auto-refresh tokens
@@ -78,9 +80,15 @@ class CalendarService:
         Returns:
             Timezone string (e.g., 'America/Los_Angeles', 'UTC')
         """
+        # Return cached timezone if available
+        if calendar_id in self._timezone_cache:
+            return self._timezone_cache[calendar_id]
+
         try:
             calendar = self.service.calendars().get(calendarId=calendar_id).execute()
-            return calendar.get('timeZone', 'UTC')
+            timezone = calendar.get('timeZone', 'UTC')
+            self._timezone_cache[calendar_id] = timezone
+            return timezone
         except Exception as e:
             logger.error(f"Error fetching calendar timezone: {e}")
             return 'UTC'
@@ -176,13 +184,23 @@ class CalendarService:
                 'summary': summary,
                 'start': {
                     'dateTime': start_time.isoformat(),
-                    'timeZone': 'UTC',
                 },
                 'end': {
                     'dateTime': end_time.isoformat(),
-                    'timeZone': 'UTC',
                 },
             }
+
+            # If datetimes are naive (no timezone info), we MUST specify the calendar's timezone
+            # defaulting to 'UTC' was causing the "off by 5 hours" bug for users in EST
+            if start_time.tzinfo is None or end_time.tzinfo is None:
+                # Fetch the actual timezone of the calendar (e.g., 'America/New_York')
+                calendar_timezone = self.get_calendar_timezone(calendar_id)
+                logger.info(f"Naive datetime detected. Using calendar timezone: {calendar_timezone}")
+                
+                if start_time.tzinfo is None:
+                    event['start']['timeZone'] = calendar_timezone
+                if end_time.tzinfo is None:
+                    event['end']['timeZone'] = calendar_timezone
 
             if description:
                 event['description'] = description
@@ -243,19 +261,30 @@ class CalendarService:
                 eventId=event_id
             ).execute()
 
+            # Get calendar timezone in case we need it for naive datetimes
+            calendar_timezone = None
+
             # Update fields if provided
             if summary:
                 event['summary'] = summary
             if start_time:
                 event['start'] = {
                     'dateTime': start_time.isoformat(),
-                    'timeZone': 'UTC',
                 }
+                # Only add explicit timeZone for naive datetimes
+                if start_time.tzinfo is None:
+                    if not calendar_timezone:
+                        calendar_timezone = self.get_calendar_timezone(calendar_id)
+                    event['start']['timeZone'] = calendar_timezone
             if end_time:
                 event['end'] = {
                     'dateTime': end_time.isoformat(),
-                    'timeZone': 'UTC',
                 }
+                # Only add explicit timeZone for naive datetimes
+                if end_time.tzinfo is None:
+                    if not calendar_timezone:
+                        calendar_timezone = self.get_calendar_timezone(calendar_id)
+                    event['end']['timeZone'] = calendar_timezone
             if description is not None:
                 event['description'] = description
             if location is not None:

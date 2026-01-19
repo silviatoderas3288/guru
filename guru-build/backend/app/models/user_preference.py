@@ -35,6 +35,7 @@ class UserPreference(BaseModel):
     chore_time = Column(String)  # Single selection (e.g. Weekend Mornings)
     chore_duration = Column(String)  # User input in minutes (e.g. "30", "60")
     chore_distribution = Column(String, nullable=True)  # "distributed" or "one_session"
+    chore_list = Column(ARRAY(String), nullable=True)  # List of chores user wants to do for the week
 
     # Focus & Schedule preferences
     bed_time = Column(String, nullable=True)  # "HH:MM" - only for agent context, not scheduled

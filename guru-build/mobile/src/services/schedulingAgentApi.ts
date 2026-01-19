@@ -11,6 +11,7 @@ export interface GenerateScheduleRequest {
   includeGoals?: boolean;
   forceRegenerate?: boolean;
   modificationRequest?: string;  // Natural language request to modify the schedule
+  email?: string | null;
 }
 
 export interface RebalanceRequest {
@@ -101,12 +102,16 @@ class SchedulingAgentApiService {
     request?: Partial<GenerateScheduleRequest>
   ): Promise<GenerateScheduleResponse> {
     const weekStartDate = request?.weekStartDate || this.getWeekStartDate();
+    
+    // Get user email to ensure backend uses the correct user record
+    const user = await GoogleAuthService.getStoredUser();
 
     const payload = {
       weekStartDate,
       includeGoals: request?.includeGoals ?? true,
       forceRegenerate: request?.forceRegenerate ?? false,
       modificationRequest: request?.modificationRequest || null,
+      email: user?.email || null,
     };
 
     console.log('Generating schedule with payload:', payload);

@@ -952,6 +952,9 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           completed: true,
         });
       }
+      
+      // Reload lists to reflect any cascading changes (parent/child completion)
+      await Promise.all([loadWeeklyGoals(), loadTodoItems()]);
     } catch (error) {
       console.error('Error toggling weekly goal:', error);
       setWeeklyGoals(weeklyGoals.map(g =>
@@ -1133,6 +1136,9 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           completed: true,
         });
       }
+      
+      // Reload lists to reflect any cascading changes (parent/child completion)
+      await Promise.all([loadWeeklyGoals(), loadTodoItems()]);
     } catch (error) {
       console.error('Error toggling todo item:', error);
       // Revert on error

@@ -34,6 +34,7 @@ class PreferenceSchema(BaseModel):
     chore_time: Optional[str] = None
     chore_duration: Optional[str] = None
     chore_distribution: Optional[str] = None
+    chore_list: Optional[List[str]] = None
     meal_duration: Optional[str] = None
 
 
@@ -60,6 +61,7 @@ class PreferenceResponse(BaseModel):
     chore_time: Optional[str] = None
     chore_duration: Optional[str] = None
     chore_distribution: Optional[str] = None
+    chore_list: Optional[List[str]] = None
     meal_duration: Optional[str] = None
 
     class Config:
@@ -113,6 +115,7 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
             chore_time=None,
             chore_duration=None,
             chore_distribution=None,
+            chore_list=[],
             meal_duration=None
         )
 
@@ -138,6 +141,7 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
         chore_time=preferences.chore_time,
         chore_duration=preferences.chore_duration,
         chore_distribution=preferences.chore_distribution,
+        chore_list=preferences.chore_list or [],
         meal_duration=preferences.meal_duration
     )
 
@@ -179,6 +183,7 @@ async def save_preferences(
         preferences.chore_time = preference_data.chore_time
         preferences.chore_duration = preference_data.chore_duration
         preferences.chore_distribution = preference_data.chore_distribution
+        preferences.chore_list = preference_data.chore_list
         preferences.meal_duration = preference_data.meal_duration
     else:
         # Create new preferences
@@ -205,6 +210,7 @@ async def save_preferences(
             chore_time=preference_data.chore_time,
             chore_duration=preference_data.chore_duration,
             chore_distribution=preference_data.chore_distribution,
+            chore_list=preference_data.chore_list,
             meal_duration=preference_data.meal_duration
         )
         db.add(preferences)
@@ -236,6 +242,7 @@ async def save_preferences(
             chore_time=preferences.chore_time,
             chore_duration=preferences.chore_duration,
             chore_distribution=preferences.chore_distribution,
+            chore_list=preferences.chore_list or [],
             meal_duration=preferences.meal_duration
         )
     }
