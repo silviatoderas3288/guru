@@ -110,3 +110,37 @@ class ScheduleStatusResponse(BaseModel):
     totalEvents: int = 0
     completedEvents: int = 0
     completionRate: float = 0.0
+
+
+# Workout-specific scheduling schemas
+class WorkoutScheduleRequest(BaseModel):
+    """Request to schedule workouts only."""
+    weekStartDate: date
+    forceReschedule: bool = False  # If true, reschedule even if already on calendar
+    modificationRequest: Optional[str] = None  # Natural language request to modify workout schedule
+
+
+class ScheduledWorkout(BaseModel):
+    """A scheduled workout event."""
+    workout_id: str
+    title: str
+    description: Optional[str] = None
+    day: str  # e.g., "Monday", "Tuesday"
+    start_time: str  # ISO format datetime
+    end_time: str  # ISO format datetime
+    calendar_event_id: Optional[str] = None  # Existing calendar event ID if already scheduled
+    is_rescheduled: bool = False  # True if this is a change from existing schedule
+    exercises: List[str] = []  # List of exercise descriptions
+
+
+class WorkoutScheduleResponse(BaseModel):
+    """Response from workout scheduling."""
+    success: bool
+    weekStartDate: date
+    scheduledWorkouts: List[ScheduledWorkout]
+    alreadyScheduledCount: int  # Number of workouts already on calendar
+    newlyScheduledCount: int  # Number of workouts newly scheduled
+    rescheduledCount: int  # Number of workouts that were moved
+    reasoning: str  # AI explanation of scheduling decisions
+    warnings: List[ScheduleWarning] = []
+    generatedAt: datetime

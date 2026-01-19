@@ -12,8 +12,11 @@ from app.schemas.schedule import (
     RebalanceRequest,
     TaskFeedbackRequest,
     ScheduleStatusResponse,
+    WorkoutScheduleRequest,
+    WorkoutScheduleResponse,
 )
 from app.services.scheduling_agent_service import SchedulingAgentService
+from app.services.workout_scheduler_service import WorkoutSchedulerService
 from app.models.user import User
 from app.services.auth_service import get_current_user
 
@@ -143,4 +146,35 @@ async def get_schedule_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get schedule status: {str(e)}",
+        )
+
+
+@router.post("/workouts/schedule", response_model=WorkoutScheduleResponse)
+async def schedule_workouts(
+    request: WorkoutScheduleRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Schedule workouts only (not the full schedule).
+
+    This endpoint:
+    - Checks which workouts are already on the calendar
+    - Only schedules workouts that are not yet scheduled
+    - Optionally reschedules existing workouts if forceReschedule is True
+    - Respects workout preferences (preferred days, times, etc.)
+    """
+    service = WorkoutSchedulerService(db, current_user)
+
+    try:
+        result = await service.schedule_workouts(
+            week_start_date=request.weekStartDate,
+            force_reschedule=request.forceReschedule,
+            modification_request=request.modificationRequest,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to schedule workouts: {str(e)}",
         )

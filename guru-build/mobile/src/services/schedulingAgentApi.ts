@@ -83,6 +83,37 @@ export interface ScheduleStatusResponse {
   completionRate: number;
 }
 
+// Workout-specific scheduling types
+export interface WorkoutScheduleRequest {
+  weekStartDate: string;
+  forceReschedule?: boolean;
+  modificationRequest?: string;
+}
+
+export interface ScheduledWorkout {
+  workout_id: string;
+  title: string;
+  description?: string;
+  day: string;
+  start_time: string;
+  end_time: string;
+  calendar_event_id?: string;
+  is_rescheduled: boolean;
+  exercises: string[];
+}
+
+export interface WorkoutScheduleResponse {
+  success: boolean;
+  weekStartDate: string;
+  scheduledWorkouts: ScheduledWorkout[];
+  alreadyScheduledCount: number;
+  newlyScheduledCount: number;
+  rescheduledCount: number;
+  reasoning: string;
+  warnings: ScheduleWarning[];
+  generatedAt: string;
+}
+
 class SchedulingAgentApiService {
   /**
    * Get the start of the current week (Monday)
@@ -200,6 +231,44 @@ class SchedulingAgentApiService {
     }
 
     return await response.json();
+  }
+
+  /**
+   * Schedule workouts only (not the full schedule)
+   * - Checks which workouts are already on the calendar
+   * - Only schedules workouts that are not yet scheduled
+   * - Optionally reschedules existing workouts if forceReschedule is true
+   */
+  async scheduleWorkouts(
+    request?: Partial<WorkoutScheduleRequest>
+  ): Promise<WorkoutScheduleResponse> {
+    const weekStartDate = request?.weekStartDate || this.getWeekStartDate();
+
+    const payload = {
+      weekStartDate,
+      forceReschedule: request?.forceReschedule ?? false,
+      modificationRequest: request?.modificationRequest || null,
+    };
+
+    console.log('Scheduling workouts with payload:', payload);
+
+    const response = await fetch(`${API_URL}/api/v1/schedule/agent/workouts/schedule`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Workout scheduling failed:', errorText);
+      throw new Error(`Failed to schedule workouts: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('Workouts scheduled successfully:', data);
+    return data;
   }
 }
 

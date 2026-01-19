@@ -11,14 +11,18 @@ import {
   Image,
   ImageBackground,
   TextInput,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { ListItemApiService } from '../services/listItemApi';
 import { WorkoutApiService, Workout, WorkoutSection, Exercise } from '../services/workoutApi';
 import { usePreferencesStore } from '../store/usePreferencesStore';
-import schedulingAgentApi, { GenerateScheduleResponse, ScheduledEvent } from '../services/schedulingAgentApi';
+import schedulingAgentApi, { WorkoutScheduleResponse, ScheduledWorkout } from '../services/schedulingAgentApi';
+import { CalendarApiService } from '../services/calendarApi';
 
 const SettingsIcon = () => (
   <Svg width="19" height="20" viewBox="0 0 19 20" fill="none">
@@ -123,7 +127,13 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
   const [showEditExerciseModal, setShowEditExerciseModal] = useState(false);
   const [showAIScheduleModal, setShowAIScheduleModal] = useState(false);
   const [aiScheduleLoading, setAiScheduleLoading] = useState(false);
-  const [aiScheduleResult, setAiScheduleResult] = useState<GenerateScheduleResponse | null>(null);
+  const [aiScheduleResult, setAiScheduleResult] = useState<WorkoutScheduleResponse | null>(null);
+  const [isAddingToCalendar, setIsAddingToCalendar] = useState(false);
+
+  // Date Picker states
+  const [weekStartDate, setWeekStartDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showDatePickerModal, setShowDatePickerModal] = useState(false);
 
   // Edit/Delete mode states
   const [editMode, setEditMode] = useState(false);
@@ -222,24 +232,92 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
     setShowScheduleModal(true);
   };
 
-  const handleAISchedule = async () => {
+  // Open the date picker modal first before generating schedule
+  const handleOpenDatePicker = () => {
+    setShowScheduleModal(false); // Close the previous modal
+    setShowDatePickerModal(true);
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    const currentDate = selectedDate || weekStartDate;
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    setWeekStartDate(currentDate);
+    
+    // Auto-generate if date selected
+    if (selectedDate && showAIScheduleModal) {
+      handleAISchedule(selectedDate);
+    }
+  };
+
+  const handleAISchedule = async (dateObj?: Date) => {
+    // If a date is provided, use it. Otherwise use the current state or default.
+    const targetDate = dateObj || weekStartDate;
+    const dateString = targetDate.toISOString().split('T')[0];
+
     setAiScheduleLoading(true);
     setShowAIScheduleModal(true);
+    setShowDatePickerModal(false);
 
     try {
-      const result = await schedulingAgentApi.generateSchedule({
-        forceRegenerate: true,
+      const result = await schedulingAgentApi.scheduleWorkouts({
+        weekStartDate: dateString,
+        forceReschedule: false,
       });
       setAiScheduleResult(result);
     } catch (error) {
-      console.error('Error generating AI schedule:', error);
+      console.error('Error scheduling workouts:', error);
       Alert.alert(
-        'AI Scheduling Error',
-        'Failed to generate schedule. Please make sure you have set your preferences in Settings.'
+        'Workout Scheduling Error',
+        'Failed to schedule workouts. Please make sure you have set your workout preferences in Settings.'
       );
       setShowAIScheduleModal(false);
     } finally {
       setAiScheduleLoading(false);
+    }
+  };
+
+  const handleAcceptWorkoutSchedule = async () => {
+    if (!aiScheduleResult?.scheduledWorkouts?.length) {
+      setShowAIScheduleModal(false);
+      return;
+    }
+
+    setIsAddingToCalendar(true);
+
+    try {
+      let addedCount = 0;
+
+      for (const workout of aiScheduleResult.scheduledWorkouts) {
+        // Only add to calendar if not already scheduled or if rescheduled
+        if (!workout.calendar_event_id || workout.is_rescheduled) {
+          try {
+            await CalendarApiService.createCalendarEvent({
+              summary: workout.title,
+              description: workout.exercises.join('\n') || workout.description || 'Workout scheduled by AI',
+              start_time: workout.start_time,
+              end_time: workout.end_time,
+            });
+            addedCount++;
+          } catch (calError) {
+            console.error('Failed to create calendar event for:', workout.title, calError);
+          }
+        }
+      }
+
+      setShowAIScheduleModal(false);
+      Alert.alert(
+        'Success',
+        addedCount > 0
+          ? `${addedCount} workout(s) added to your calendar!`
+          : 'All workouts were already scheduled.'
+      );
+    } catch (error) {
+      console.error('Error adding workouts to calendar:', error);
+      Alert.alert('Error', 'Failed to add workouts to calendar.');
+    } finally {
+      setIsAddingToCalendar(false);
     }
   };
 
@@ -797,10 +875,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
           onPress={() => setShowScheduleModal(false)}
         >
           <Pressable style={styles.modalContent}>
-            <TouchableOpacity style={styles.aiButton} onPress={() => {
-              setShowScheduleModal(false);
-              handleAISchedule();
-            }}>
+            <TouchableOpacity style={styles.aiButton} onPress={handleOpenDatePicker}>
               <LinearGradient
                 colors={['#FF9D00', '#4D5AEE']}
                 start={{ x: 0, y: 0 }}
@@ -1023,120 +1098,303 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
         </Pressable>
       </Modal>
 
-      {/* AI Schedule Result Modal */}
+      {/* Date Picker Modal - Shows BEFORE generating schedule */}
       <Modal
-  visible={showAIScheduleModal}
-  transparent
-  animationType="fade"
-  onRequestClose={() => setShowAIScheduleModal(false)}
->
-  {/* Tap outside to close */}
-  <View style={styles.aiModalOverlay}>
-    <Pressable
-      style={StyleSheet.absoluteFill}
-      onPress={() => setShowAIScheduleModal(false)}
-    />
-      {/* Card (prevents closing when tapping inside) */}
-      <View style={styles.aiModalCard}>
-          <ScrollView
-            style={styles.aiScheduleScrollView}
-            contentContainerStyle={styles.aiScheduleScrollContent}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-            keyboardShouldPersistTaps="handled"
-          >
-            {aiScheduleLoading ? (
-              <View style={styles.aiLoadingContainer}>
+        visible={showDatePickerModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDatePickerModal(false)}
+      >
+        <View style={styles.datePickerModalOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setShowDatePickerModal(false)}
+          />
+          <View style={styles.datePickerModalCard}>
+            <Text style={styles.datePickerModalTitle}>Schedule Week</Text>
+            <Text style={styles.datePickerModalSubtitle}>
+              Select the week start date for your schedule
+            </Text>
+
+            {/* Custom Date Picker */}
+            <View style={styles.datePickerContainer}>
+              <TouchableOpacity
+                style={styles.dateArrowButton}
+                onPress={() => {
+                  const newDate = new Date(weekStartDate);
+                  newDate.setDate(newDate.getDate() - 7);
+                  setWeekStartDate(newDate);
+                }}
+              >
+                <Ionicons name="chevron-back" size={28} color="#4D5AEE" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.dateDisplayBox}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={styles.dateDisplayMonth}>
+                  {weekStartDate.toLocaleDateString('en-US', { month: 'short' })}
+                </Text>
+                <Text style={styles.dateDisplayDay}>
+                  {weekStartDate.getDate()}
+                </Text>
+                <Text style={styles.dateDisplayYear}>
+                  {weekStartDate.getFullYear()}
+                </Text>
+                <Text style={styles.dateDisplayWeekday}>
+                  {weekStartDate.toLocaleDateString('en-US', { weekday: 'long' })}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.dateArrowButton}
+                onPress={() => {
+                  const newDate = new Date(weekStartDate);
+                  newDate.setDate(newDate.getDate() + 7);
+                  setWeekStartDate(newDate);
+                }}
+              >
+                <Ionicons name="chevron-forward" size={28} color="#4D5AEE" />
+              </TouchableOpacity>
+            </View>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={weekStartDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(event, selectedDate) => {
+                  if (Platform.OS === 'android') {
+                    setShowDatePicker(false);
+                  }
+                  if (selectedDate) {
+                    setWeekStartDate(selectedDate);
+                  }
+                }}
+                style={styles.dateTimePicker}
+              />
+            )}
+
+            {Platform.OS === 'ios' && showDatePicker && (
+              <TouchableOpacity
+                style={styles.datePickerDoneButton}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={styles.datePickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Quick Select Buttons */}
+            <View style={styles.quickSelectContainer}>
+              <TouchableOpacity
+                style={styles.quickSelectButton}
+                onPress={() => {
+                  const today = new Date();
+                  const day = today.getDay();
+                  const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+                  setWeekStartDate(new Date(today.setDate(diff)));
+                }}
+              >
+                <Text style={styles.quickSelectText}>This Week</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.quickSelectButton}
+                onPress={() => {
+                  const today = new Date();
+                  const day = today.getDay();
+                  const diff = today.getDate() - day + (day === 0 ? 1 : 8);
+                  setWeekStartDate(new Date(today.setDate(diff)));
+                }}
+              >
+                <Text style={styles.quickSelectText}>Next Week</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Generate Button */}
+            <TouchableOpacity
+              style={styles.generateScheduleButton}
+              onPress={() => handleAISchedule(weekStartDate)}
+            >
+              <LinearGradient
+                colors={['#FF9D00', '#4D5AEE']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.generateButtonGradient}
+              >
                 <Image
                   source={require('../../assets/ai.png')}
-                  style={styles.aiLoadingIcon}
+                  style={styles.generateButtonIcon}
                   resizeMode="contain"
                 />
-                <Text style={styles.aiLoadingText}>AI is creating your schedule...</Text>
-                <Text style={styles.aiLoadingSubtext}>
-                  Analyzing your preferences and calendar
-                </Text>
-              </View>
-            ) : aiScheduleResult ? (
-              <>
-                <View style={styles.aiScheduleHeader}>
-                  <Text style={styles.aiScheduleTitle}>Your AI Schedule</Text>
-                </View>
-
-                {aiScheduleResult.warnings?.length ? (
-                  <View style={styles.warningsContainer}>
-                    {aiScheduleResult.warnings.map((warning, index) => (
-                      <Text key={index} style={styles.warningText}>
-                        {warning.message}
-                      </Text>
-                    ))}
-                  </View>
-                ) : null}
-
-                {aiScheduleResult.scheduledEvents?.length ? (
-                  Object.entries(
-                    aiScheduleResult.scheduledEvents.reduce((acc, event) => {
-                      const day = event.day || 'Unscheduled';
-                      if (!acc[day]) acc[day] = [];
-                      acc[day].push(event);
-                      return acc;
-                    }, {} as Record<string, ScheduledEvent[]>)
-                  ).map(([day, events]) => (
-                    <View key={day} style={styles.daySection}>
-                      <Text style={styles.dayHeader}>{day}</Text>
-                      {events.map((event, index) => (
-                        <View key={index} style={styles.scheduleEventItem}>
-                          <View style={styles.eventDetails}>
-                            <Text style={styles.eventTitle}>{event.title}</Text>
-                            <Text style={styles.eventTime}>
-                              {formatTime(event.start_time)} - {formatTime(event.end_time)}
-                            </Text>
-                            {event.description ? (
-                              <Text style={styles.eventDescription}>{event.description}</Text>
-                            ) : null}
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.noEventsText}>No events scheduled</Text>
-                )}
-
-                <View style={styles.aiScheduleButtons}>
-                  <TouchableOpacity
-                    style={[styles.aiScheduleButton, styles.regenerateButton]}
-                    onPress={handleAISchedule}
-                  >
-                    <Text style={styles.regenerateButtonText}>Regenerate</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.aiScheduleButton, styles.acceptButton]}
-                    onPress={() => {
-                      setShowAIScheduleModal(false);
-                      Alert.alert(
-                        'Schedule Saved',
-                        'Your AI-generated schedule has been saved!'
-                      );
-                    }}
-                  >
-                    <Text style={styles.acceptButtonText}>Accept</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            ) : null}
+                <Text style={styles.generateButtonText}>Generate Schedule</Text>
+              </LinearGradient>
+            </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.modalCloseButton}
-              onPress={() => setShowAIScheduleModal(false)}
+              style={styles.datePickerCancelButton}
+              onPress={() => setShowDatePickerModal(false)}
             >
-              <Text style={styles.modalCloseText}>Close</Text>
+              <Text style={styles.datePickerCancelText}>Cancel</Text>
             </TouchableOpacity>
-          </ScrollView>
-      </View>
-    </View>
-</Modal>
+          </View>
+        </View>
+      </Modal>
+
+      {/* AI Schedule Result Modal */}
+      <Modal
+        visible={showAIScheduleModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAIScheduleModal(false)}
+      >
+        <View style={styles.aiModalOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => !aiScheduleLoading && !isAddingToCalendar && setShowAIScheduleModal(false)}
+          />
+          <View style={styles.aiModalCard}>
+            <ScrollView
+              style={styles.aiScheduleScrollView}
+              contentContainerStyle={styles.aiScheduleScrollContent}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+            >
+              {aiScheduleLoading || isAddingToCalendar ? (
+                <View style={styles.aiLoadingContainer}>
+                  <Image
+                    source={require('../../assets/ai.png')}
+                    style={styles.aiLoadingIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.aiLoadingText}>
+                    {isAddingToCalendar ? 'Adding workouts to calendar...' : 'AI is scheduling your workouts...'}
+                  </Text>
+                  <Text style={styles.aiLoadingSubtext}>
+                    {isAddingToCalendar ? 'Creating calendar events' : 'Checking your calendar and preferences'}
+                  </Text>
+                </View>
+              ) : aiScheduleResult ? (
+                <>
+                  <View style={styles.aiScheduleHeader}>
+                    <Text style={styles.aiScheduleTitle}>Workout Schedule</Text>
+                  </View>
+
+                  {/* Summary */}
+                  <View style={styles.scheduleSummary}>
+                    {aiScheduleResult.alreadyScheduledCount > 0 && (
+                      <Text style={styles.summaryText}>
+                        ✓ {aiScheduleResult.alreadyScheduledCount} workout(s) already on calendar
+                      </Text>
+                    )}
+                    {aiScheduleResult.newlyScheduledCount > 0 && (
+                      <Text style={styles.summaryText}>
+                        + {aiScheduleResult.newlyScheduledCount} workout(s) to be scheduled
+                      </Text>
+                    )}
+                    {aiScheduleResult.rescheduledCount > 0 && (
+                      <Text style={styles.summaryText}>
+                        ↻ {aiScheduleResult.rescheduledCount} workout(s) rescheduled
+                      </Text>
+                    )}
+                  </View>
+
+                  {aiScheduleResult.warnings?.length ? (
+                    <View style={styles.warningsContainer}>
+                      {aiScheduleResult.warnings.map((warning: { message: string; severity: string }, index: number) => (
+                        <Text key={index} style={styles.warningText}>
+                          {warning.message}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : null}
+
+                  {aiScheduleResult.scheduledWorkouts?.length ? (
+                    Object.entries(
+                      aiScheduleResult.scheduledWorkouts.reduce((acc: Record<string, ScheduledWorkout[]>, workout: ScheduledWorkout) => {
+                        const day = workout.day || 'Unscheduled';
+                        if (!acc[day]) acc[day] = [];
+                        acc[day].push(workout);
+                        return acc;
+                      }, {} as Record<string, ScheduledWorkout[]>)
+                    )
+                    .sort(([dayA], [dayB]) => {
+                      const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Unscheduled'];
+                      return dayOrder.indexOf(dayA) - dayOrder.indexOf(dayB);
+                    })
+                    .map(([day, dayWorkouts]) => (
+                      <View key={day} style={styles.daySection}>
+                        <Text style={styles.dayHeader}>{day}</Text>
+                        {dayWorkouts.map((workout: ScheduledWorkout, index: number) => (
+                          <View key={index} style={[
+                            styles.scheduleEventItem,
+                            workout.calendar_event_id && !workout.is_rescheduled && styles.alreadyScheduledItem
+                          ]}>
+                            <View style={styles.eventDetails}>
+                              <View style={styles.eventTitleRow}>
+                                <Text style={styles.eventTitle}>{workout.title}</Text>
+                                {workout.calendar_event_id && !workout.is_rescheduled && (
+                                  <Text style={styles.alreadyScheduledBadge}>Already scheduled</Text>
+                                )}
+                                {workout.is_rescheduled && (
+                                  <Text style={styles.rescheduledBadge}>Rescheduled</Text>
+                                )}
+                              </View>
+                              <Text style={styles.eventTime}>
+                                {formatTime(workout.start_time)} - {formatTime(workout.end_time)}
+                              </Text>
+                              {workout.exercises?.length > 0 && (
+                                <Text style={styles.eventDescription}>
+                                  {workout.exercises.slice(0, 3).join(' • ')}
+                                  {workout.exercises.length > 3 && ` +${workout.exercises.length - 3} more`}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.noEventsText}>No workouts to schedule</Text>
+                  )}
+
+                  {/* AI Reasoning */}
+                  {aiScheduleResult.reasoning && (
+                    <View style={styles.reasoningContainer}>
+                      <Text style={styles.reasoningTitle}>AI Notes:</Text>
+                      <Text style={styles.reasoningText}>{aiScheduleResult.reasoning}</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.aiScheduleButtons}>
+                    <TouchableOpacity
+                      style={[styles.aiScheduleButton, styles.regenerateButton]}
+                      onPress={handleAISchedule}
+                    >
+                      <Text style={styles.regenerateButtonText}>Regenerate</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.aiScheduleButton, styles.acceptButton]}
+                      onPress={handleAcceptWorkoutSchedule}
+                    >
+                      <Text style={styles.acceptButtonText}>Add to Calendar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : null}
+
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setShowAIScheduleModal(false)}
+              >
+                <Text style={styles.modalCloseText}>Close</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
 
     </>
@@ -1567,10 +1825,165 @@ const styles = StyleSheet.create({
     width: 120,
   },
   modalCloseText: {
-    color: '#FFF',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#333',
+  },
+  // Date Picker Modal Styles
+  datePickerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  datePickerModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#F7E8FF',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { "width": 0, "height": 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 12,
+    alignItems: 'center',
+  },
+  datePickerModalTitle: {
+    fontSize: 24,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  datePickerModalSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  datePickerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    width: '100%',
+  },
+  dateArrowButton: {
+    padding: 8,
+  },
+  dateDisplayBox: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 12,
+    minWidth: 140,
+    shadowColor: '#4D5AEE',
+    shadowOffset: { "width": 0, "height": 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(77, 90, 238, 0.2)',
+  },
+  dateDisplayMonth: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    textTransform: 'uppercase',
+  },
+  dateDisplayDay: {
+    fontSize: 32,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    lineHeight: 38,
+  },
+  dateDisplayYear: {
+    fontSize: 12,
+    fontFamily: 'Margarine',
+    color: '#999',
+  },
+  dateDisplayWeekday: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#666',
+    marginTop: 2,
+  },
+  dateTimePicker: {
+    width: '100%',
+    backgroundColor: 'white',
+  },
+  datePickerDoneButton: {
+    alignSelf: 'flex-end',
+    padding: 10,
+    marginBottom: 10,
+  },
+  datePickerDoneText: {
     fontSize: 16,
+    color: '#4D5AEE',
     fontFamily: 'Margarine',
     fontWeight: '700',
+  },
+  quickSelectContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  quickSelectButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(77, 90, 238, 0.1)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(77, 90, 238, 0.3)',
+  },
+  quickSelectText: {
+    color: '#4D5AEE',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+  },
+  generateScheduleButton: {
+    width: '100%',
+    borderRadius: 25,
+    shadowColor: '#4D5AEE',
+    shadowOffset: { "width": 0, "height": 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+    marginBottom: 16,
+  },
+  generateButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 25,
+    gap: 10,
+  },
+  generateButtonIcon: {
+    width: 24,
+    height: 24,
+  },
+  generateButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  datePickerCancelButton: {
+    paddingVertical: 10,
+  },
+  datePickerCancelText: {
+    color: '#FF3B30',
+    fontSize: 16,
+    fontFamily: 'Margarine',
   },
   aiButton: {
     position: 'absolute',
@@ -1830,19 +2243,74 @@ acceptButtonText: {
   fontFamily: 'Margarine',
   color: '#FFF',
 },
-// modalCloseButton: {
-//   marginTop: 6,
-//   paddingVertical: 10,
-//   borderRadius: 16,
-//   alignItems: 'center',
-//   backgroundColor: 'rgba(0,0,0,0.06)',
-// },
 
-// modalCloseText: {
-//   fontSize: 14,
-//   fontFamily: 'Margarine',
-//   color: '#333',
-// },
+// Workout scheduling specific styles
+scheduleSummary: {
+  backgroundColor: 'rgba(77, 90, 238, 0.1)',
+  borderRadius: 12,
+  padding: 12,
+  marginBottom: 16,
+},
 
+summaryText: {
+  fontSize: 14,
+  fontFamily: 'Margarine',
+  color: '#4D5AEE',
+  marginBottom: 4,
+},
+
+eventTitleRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  flexWrap: 'wrap',
+},
+
+alreadyScheduledItem: {
+  opacity: 0.7,
+  backgroundColor: 'rgba(76, 175, 80, 0.1)',
+},
+
+alreadyScheduledBadge: {
+  fontSize: 10,
+  fontFamily: 'Margarine',
+  color: '#4CAF50',
+  backgroundColor: 'rgba(76, 175, 80, 0.2)',
+  paddingHorizontal: 8,
+  paddingVertical: 2,
+  borderRadius: 8,
+},
+
+rescheduledBadge: {
+  fontSize: 10,
+  fontFamily: 'Margarine',
+  color: '#FF9800',
+  backgroundColor: 'rgba(255, 152, 0, 0.2)',
+  paddingHorizontal: 8,
+  paddingVertical: 2,
+  borderRadius: 8,
+},
+
+reasoningContainer: {
+  backgroundColor: 'rgba(0, 0, 0, 0.05)',
+  borderRadius: 12,
+  padding: 12,
+  marginTop: 16,
+  marginBottom: 8,
+},
+
+reasoningTitle: {
+  fontSize: 14,
+  fontFamily: 'Margarine',
+  color: '#666',
+  marginBottom: 4,
+},
+
+reasoningText: {
+  fontSize: 13,
+  fontFamily: 'Margarine',
+  color: '#333',
+  lineHeight: 18,
+},
 
 });
