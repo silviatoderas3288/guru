@@ -7,10 +7,10 @@ from app.models.saved_media import SavedPodcast, SavedEpisode
 from app.models.user import User
 from app.schemas.saved_media import SavedPodcastCreate, SavedPodcastResponse, SavedEpisodeCreate, SavedEpisodeResponse
 
-router = APIRouter(prefix="/library", tags=["library"])
+router = APIRouter(tags=["library"])
 
 # Dependency to get current user (same as in journal.py)
-async def get_current_user(db: Session = Depends(get_db)) -> User:
+def get_current_user(db: Session = Depends(get_db)) -> User:
     """
     Get current authenticated user.
     For development, returns the most recently updated user.
@@ -39,6 +39,23 @@ def save_podcast(podcast: SavedPodcastCreate, db: Session = Depends(get_db), cur
     db.commit()
     db.refresh(db_podcast)
     return db_podcast
+
+@router.get("/podcasts/{podcast_id}/episodes", response_model=List[SavedEpisodeResponse])
+def get_podcast_episodes(podcast_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Get all saved episodes for a specific podcast"""
+    try:
+        pid = UUID(podcast_id)
+        db_podcast = db.query(SavedPodcast).filter(SavedPodcast.id == pid, SavedPodcast.user_id == current_user.id).first()
+    except ValueError:
+        # Try external_id
+        db_podcast = db.query(SavedPodcast).filter(SavedPodcast.external_id == podcast_id, SavedPodcast.user_id == current_user.id).first()
+
+    if not db_podcast:
+        raise HTTPException(status_code=404, detail="Podcast not found")
+    
+    # Get all episodes for this podcast
+    episodes = db.query(SavedEpisode).filter(SavedEpisode.podcast_id == db_podcast.id).all()
+    return episodes
 
 @router.delete("/podcasts/{podcast_id}")
 def remove_podcast(podcast_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

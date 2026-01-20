@@ -86,6 +86,13 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   const [weekStartDate, setWeekStartDate] = useState(new Date());
   const [isAddingToCalendar, setIsAddingToCalendar] = useState(false);
 
+  // Saved episodes state
+  const [showSavedEpisodesModal, setShowSavedEpisodesModal] = useState(false);
+  const [selectedSavedPodcast, setSelectedSavedPodcast] = useState<Podcast | null>(null);
+  const [savedEpisodes, setSavedEpisodes] = useState<Episode[]>([]);
+  const [loadingSavedEpisodes, setLoadingSavedEpisodes] = useState(false);
+  const [isExploringEpisodes, setIsExploringEpisodes] = useState(false);
+
   // State for podcast data
   const [currentFavorites, setCurrentFavorites] = useState<Podcast[]>([]);
   const [recentEpisodes, setRecentEpisodes] = useState<Episode[]>([]);
@@ -254,6 +261,76 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     loadSavedPodcasts();
   }, []);
 
+  // Load saved episodes for a podcast
+  const loadSavedEpisodes = async (podcastId: string) => {
+    setLoadingSavedEpisodes(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/library/podcasts/${podcastId}/episodes`);
+      if (response.ok) {
+        const data = await response.json();
+        const formatted = data.map((episode: any) => ({
+          id: episode.id || episode.external_id,
+          title: episode.title,
+          podcast: episode.podcast_title || selectedSavedPodcast?.title || 'Unknown',
+          duration: episode.duration || 'Unknown',
+          artwork: episode.image_url || selectedSavedPodcast?.artwork || 'https://via.placeholder.com/300',
+          podcastArtwork: selectedSavedPodcast?.artwork,
+          link: episode.link,
+          enclosureUrl: episode.enclosure_url,
+        }));
+        setSavedEpisodes(formatted);
+      } else {
+        setSavedEpisodes([]);
+      }
+    } catch (error) {
+      console.log('Could not load saved episodes:', error);
+      setSavedEpisodes([]);
+    } finally {
+      setLoadingSavedEpisodes(false);
+    }
+  };
+
+  // Handle saved podcast click to show episodes
+  const handleSavedPodcastClick = async (podcast: Podcast) => {
+    setSelectedSavedPodcast(podcast);
+    setShowSavedEpisodesModal(true);
+    await loadSavedEpisodes(podcast.id);
+  };
+
+  // Handle exploring episodes from a saved podcast
+  const handleExploreEpisodes = async () => {
+    if (!selectedSavedPodcast) return;
+
+    setIsExploringEpisodes(true);
+    setLoadingEpisodes(true);
+    setShowSavedEpisodesModal(false);
+    
+    // Set the selected podcast for the episode selection modal
+    setSelectedPodcast(selectedSavedPodcast);
+    setShowEpisodeSelectionModal(true);
+
+    try {
+      const episodes = await PodcastApiService.getPodcastEpisodes(selectedSavedPodcast.id, 20);
+      const formatted = episodes.map((episode: ApiEpisode) => ({
+        id: String(episode.id),
+        title: episode.title,
+        podcast: selectedSavedPodcast.title,
+        duration: PodcastApiService.formatDuration(episode.duration),
+        artwork: episode.image || selectedSavedPodcast.artwork || 'https://via.placeholder.com/300',
+        podcastArtwork: selectedSavedPodcast.artwork,
+        link: episode.link,
+        enclosureUrl: episode.enclosureUrl,
+      }));
+      setPodcastEpisodes(formatted);
+    } catch (error) {
+      console.error('Error loading episodes:', error);
+      Alert.alert('Error', 'Failed to load episodes');
+      setShowEpisodeSelectionModal(false);
+    } finally {
+      setLoadingEpisodes(false);
+    }
+  };
+
   // Search for podcasts
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -300,14 +377,15 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       });
 
       if (response.ok) {
-        Alert.alert('Saved!', `"${podcast.title}" has been added to your library`);
-        loadSavedPodcasts();
+        await loadSavedPodcasts();
       } else {
-        Alert.alert('Error', 'Failed to save podcast');
+        const errorData = await response.text();
+        console.error('Save error response:', errorData);
+        Alert.alert('Error', 'Failed to save podcast. Please try again.');
       }
     } catch (error) {
       console.error('Save error:', error);
-      Alert.alert('Error', 'Failed to save podcast');
+      Alert.alert('Error', 'Failed to save podcast. Check your connection and try again.');
     }
   };
 
@@ -343,9 +421,33 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     return savedPodcasts.some(p => p.id === podcastId);
   };
 
-  const handleSchedule = (podcast: Podcast | Episode) => {
+  const handleSchedule = async (podcast: Podcast | Episode) => {
     setSelectedPodcast(podcast as Podcast);
-    setShowScheduleModal(true);
+    
+    // Load episodes and show episode selection modal directly
+    setLoadingEpisodes(true);
+    setShowEpisodeSelectionModal(true);
+
+    try {
+      const episodes = await PodcastApiService.getPodcastEpisodes((podcast as Podcast).id, 20);
+      const formattedEpisodes = episodes.map((episode: ApiEpisode) => ({
+        id: String(episode.id),
+        title: episode.title,
+        podcast: (podcast as Podcast).title,
+        duration: PodcastApiService.formatDuration(episode.duration),
+        artwork: episode.image || (podcast as Podcast).artwork,
+        podcastArtwork: (podcast as Podcast).artwork,
+        link: episode.link,
+        enclosureUrl: episode.enclosureUrl,
+      }));
+      setPodcastEpisodes(formattedEpisodes);
+    } catch (error) {
+      console.error('Error loading episodes:', error);
+      Alert.alert('Error', 'Failed to load podcast episodes');
+      setShowEpisodeSelectionModal(false);
+    } finally {
+      setLoadingEpisodes(false);
+    }
   };
 
   const handleOpenScheduleOptions = () => {
@@ -363,17 +465,18 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     if (!selectedPodcast) return;
 
     try {
-      const item = selectedPodcast as any;
-      const podcastLink = item.enclosureUrl || item.link || item.website || item.url || '';
+      const item = selectedEpisode || selectedPodcast;
+      const podcastLink = (item as any).enclosureUrl || (item as any).link || (item as any).website || (item as any).url || '';
+      const title = selectedEpisode ? `${selectedEpisode.title} - ${selectedPodcast.title}` : selectedPodcast.title;
 
       await ListItemApiService.createListItem({
-        text: `Listen: ${selectedPodcast.title}`,
+        text: `Listen: ${title}`,
         completed: false,
         item_type: ListItemType.TODO,
         notes: podcastLink ? `Link: ${podcastLink}` : undefined,
       });
 
-      Alert.alert('Added to Today', `"${selectedPodcast.title}" has been added to your today's todos!`);
+      Alert.alert('Added to Today', `"${title}" has been added to your today's todos!`);
     } catch (error) {
       console.error('Error adding to today:', error);
       Alert.alert('Error', 'Failed to add to today\'s list');
@@ -385,17 +488,18 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     if (!selectedPodcast) return;
 
     try {
-      const item = selectedPodcast as any;
-      const podcastLink = item.enclosureUrl || item.link || item.website || item.url || '';
+      const item = selectedEpisode || selectedPodcast;
+      const podcastLink = (item as any).enclosureUrl || (item as any).link || (item as any).website || (item as any).url || '';
+      const title = selectedEpisode ? `${selectedEpisode.title} - ${selectedPodcast.title}` : selectedPodcast.title;
 
       await ListItemApiService.createListItem({
-        text: `Listen: ${selectedPodcast.title}`,
+        text: `Listen: ${title}`,
         completed: false,
         item_type: ListItemType.WEEKLY_GOAL,
         notes: podcastLink ? `Link: ${podcastLink}` : undefined,
       });
 
-      Alert.alert('Added to Weekly Goals', `"${selectedPodcast.title}" has been added to your weekly goals!`);
+      Alert.alert('Added to Weekly Goals', `"${title}" has been added to your weekly goals!`);
     } catch (error) {
       console.error('Error adding to weekly goals:', error);
       Alert.alert('Error', 'Failed to add to weekly goals');
@@ -406,18 +510,19 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     setShowManualOptionsModal(false);
     if (!selectedPodcast) return;
 
-    const item = selectedPodcast as any;
-    const podcastLink = item.enclosureUrl || item.link || item.website || item.url || '';
+    const item = selectedEpisode || selectedPodcast;
+    const podcastLink = (item as any).enclosureUrl || (item as any).link || (item as any).website || (item as any).url || '';
+    const title = selectedEpisode ? `${selectedEpisode.title} - ${selectedPodcast.title}` : selectedPodcast.title;
     const description = podcastLink ? `Listen: ${podcastLink}` : '';
 
     if (onNavigateToCalendar) {
       onNavigateToCalendar({
-        title: selectedPodcast.title,
+        title: title,
         link: podcastLink,
         description: description,
       });
     } else {
-      Alert.alert('Manual Schedule', `Manually scheduling "${selectedPodcast?.title}" to calendar...`);
+      Alert.alert('Manual Schedule', `Manually scheduling "${title}" to calendar...`);
     }
   };
 
@@ -462,6 +567,12 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     setSelectedEpisode(null);
     setShowEpisodeSelectionModal(false);
     setShowDatePickerModal(true);
+  };
+
+  const handleEpisodeManualSchedule = (episode: Episode) => {
+    setSelectedEpisode(episode);
+    setShowEpisodeSelectionModal(false);
+    setShowManualOptionsModal(true);
   };
 
   const getWeekStartDate = (date: Date): Date => {
@@ -707,42 +818,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
             </View>
           )}
 
-          {/* Saved Podcasts Section */}
-          {savedPodcasts.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Your Saved Podcasts</Text>
-              <Image
-                source={require('../../assets/under_pref.png')}
-                style={styles.sectionUnderlineOrange}
-                resizeMode="contain"
-              />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
-                {savedPodcasts.map((podcast, index) => (
-                  <TouchableOpacity
-                    key={podcast.id}
-                    style={styles.recommendationItemWrapper}
-                    onPress={() => handleSchedule(podcast)}
-                    onLongPress={() => handleRemoveSavedPodcast(podcast)}
-                  >
-                    <ImageBackground
-                      source={require('../../assets/sq.png')}
-                      style={styles.squareContainer}
-                      resizeMode="stretch"
-                      tintColor={index % 2 === 0 ? '#FF3B30' : '#4D5AEE'}
-                    >
-                      <Image
-                        source={{ uri: podcast.artwork }}
-                        style={styles.innerSquareImage}
-                        resizeMode="cover"
-                      />
-                    </ImageBackground>
-                    <Text style={styles.searchResultTitle} numberOfLines={2}>{podcast.title}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <Text style={styles.savedHint}>Long press to remove</Text>
-            </View>
-          )}
+          
 
           {/* Current Favorites Section */}
           <View style={styles.section}>
@@ -781,7 +857,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
             <Text style={styles.sectionTitle}>Recent Episodes</Text>
             <Image
               source={require('../../assets/under_pref.png')}
-              style={styles.sectionUnderline}
+              style={styles.sectionUnderlineOrange}
               resizeMode="contain"
             />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
@@ -813,6 +889,46 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                 </TouchableOpacity>
               ))}
             </ScrollView>
+          </View>
+          {/* Saved Podcasts Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Your Saved Podcasts</Text>
+            <Image
+              source={require('../../assets/under_pref.png')}
+              style={styles.sectionUnderlineOrange}
+              resizeMode="contain"
+            />
+            {savedPodcasts.length > 0 ? (
+              <>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+                  {savedPodcasts.map((podcast, index) => (
+                    <TouchableOpacity
+                      key={podcast.id}
+                      style={styles.recommendationItemWrapper}
+                      onPress={() => handleSavedPodcastClick(podcast)}
+                      onLongPress={() => handleRemoveSavedPodcast(podcast)}
+                    >
+                      <ImageBackground
+                        source={require('../../assets/sq.png')}
+                        style={styles.squareContainer}
+                        resizeMode="stretch"
+                        tintColor={index % 2 === 0 ? '#FF3B30' : '#4D5AEE'}
+                      >
+                        <Image
+                          source={{ uri: podcast.artwork }}
+                          style={styles.innerSquareImage}
+                          resizeMode="cover"
+                        />
+                      </ImageBackground>
+                      <Text style={styles.searchResultTitle} numberOfLines={2}>{podcast.title}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <Text style={styles.savedHint}>Tap to view episodes • Long press to remove</Text>
+              </>
+            ) : (
+              <Text style={styles.emptyStateText}>No saved podcasts yet</Text>
+            )}
           </View>
 
           {/* Podcasts You Might Like Section */}
@@ -1068,24 +1184,49 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                   </LinearGradient>
                 </TouchableOpacity>
 
+                {/* Manual Schedule Option */}
+                <TouchableOpacity
+                  style={styles.manualScheduleButton}
+                  onPress={() => {
+                    setShowEpisodeSelectionModal(false);
+                    setShowScheduleOptionsModal(true);
+                  }}
+                >
+                  <LinearGradient
+                    colors={['#4D5AEE', '#FF9D00']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.manualScheduleGradient}
+                  >
+                    <Text style={styles.manualScheduleText}>📋 Manual Schedule</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+
                 {/* Episode List */}
                 {podcastEpisodes.map((episode) => (
-                  <TouchableOpacity
-                    key={episode.id}
-                    style={styles.episodeItem}
-                    onPress={() => handleSelectEpisode(episode)}
-                  >
-                    <Image
-                      source={{ uri: episode.artwork }}
-                      style={styles.episodeItemImage}
-                    />
-                    <View style={styles.episodeItemInfo}>
-                      <Text style={styles.episodeItemTitle} numberOfLines={2}>
-                        {episode.title}
-                      </Text>
-                      <Text style={styles.episodeItemDuration}>{episode.duration}</Text>
-                    </View>
-                  </TouchableOpacity>
+                  <View key={episode.id} style={styles.episodeItemContainer}>
+                    <TouchableOpacity
+                      style={styles.episodeItem}
+                      onPress={() => handleSelectEpisode(episode)}
+                    >
+                      <Image
+                        source={{ uri: episode.artwork }}
+                        style={styles.episodeItemImage}
+                      />
+                      <View style={styles.episodeItemInfo}>
+                        <Text style={styles.episodeItemTitle} numberOfLines={2}>
+                          {episode.title}
+                        </Text>
+                        <Text style={styles.episodeItemDuration}>{episode.duration}</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.episodeManualButton}
+                      onPress={() => handleEpisodeManualSchedule(episode)}
+                    >
+                      <Text style={styles.episodeManualButtonText}>+ Add Manually</Text>
+                    </TouchableOpacity>
+                  </View>
                 ))}
               </ScrollView>
             )}
@@ -1169,6 +1310,81 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                 <Text style={styles.generateText}>Generate Schedule</Text>
               </LinearGradient>
             </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Saved Episodes Modal */}
+      <Modal
+        visible={showSavedEpisodesModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSavedEpisodesModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowSavedEpisodesModal(false)}
+        >
+          <Pressable style={styles.episodeSelectionContent}>
+            <TouchableOpacity
+              style={styles.scheduleCloseButton}
+              onPress={() => setShowSavedEpisodesModal(false)}
+            >
+              <Text style={styles.scheduleCloseButtonText}>✕</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.scheduleOptionsTitle}>
+              {selectedSavedPodcast?.title}
+            </Text>
+            <Text style={styles.episodeSubtitle}>
+              {savedEpisodes.length === 0 ? 'No saved episodes' : `${savedEpisodes.length} saved episode${savedEpisodes.length !== 1 ? 's' : ''}`}
+            </Text>
+
+            {loadingSavedEpisodes ? (
+              <View style={styles.loadingEpisodesContainer}>
+                <ActivityIndicator size="large" color="#4D5AEE" />
+                <Text style={styles.loadingEpisodesText}>Loading episodes...</Text>
+              </View>
+            ) : savedEpisodes.length > 0 ? (
+              <ScrollView style={styles.episodesList} showsVerticalScrollIndicator={false}>
+                {savedEpisodes.map((episode) => (
+                  <TouchableOpacity
+                    key={episode.id}
+                    style={styles.episodeItem}
+                    onPress={() => handleSchedule(episode)}
+                  >
+                    <Image
+                      source={{ uri: episode.artwork }}
+                      style={styles.episodeItemImage}
+                    />
+                    <View style={styles.episodeItemInfo}>
+                      <Text style={styles.episodeItemTitle} numberOfLines={2}>
+                        {episode.title}
+                      </Text>
+                      <Text style={styles.episodeItemDuration}>{episode.duration}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.loadingEpisodesContainer}>
+                <Text style={styles.loadingEpisodesText}>No episodes saved yet</Text>
+                <TouchableOpacity
+                  style={styles.exploreEpisodesButton}
+                  onPress={handleExploreEpisodes}
+                  disabled={loadingEpisodes}
+                >
+                  <LinearGradient
+                    colors={['#FF9D00', '#4D5AEE']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.exploreEpisodesGradient}
+                  >
+                    <Text style={styles.exploreEpisodesText}>🔍 Explore Episodes</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -1403,6 +1619,14 @@ const styles = StyleSheet.create({
     color: '#999',
     textAlign: 'center',
     marginTop: 5,
+    fontStyle: 'italic',
+  },
+  emptyStateText: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 20,
     fontStyle: 'italic',
   },
   section: {
@@ -2086,5 +2310,58 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Margarine',
     textAlign: 'center',
+  },
+  exploreEpisodesButton: {
+    borderRadius: 25,
+    overflow: 'hidden',
+    marginTop: 20,
+  },
+  exploreEpisodesGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    borderRadius: 25,
+  },
+  exploreEpisodesText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  manualScheduleButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 15,
+  },
+  manualScheduleGradient: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  manualScheduleText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  episodeItemContainer: {
+    marginBottom: 12,
+  },
+  episodeManualButton: {
+    backgroundColor: 'rgba(77, 90, 238, 0.2)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#4D5AEE',
+  },
+  episodeManualButtonText: {
+    color: '#4D5AEE',
+    fontSize: 12,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
   },
 });

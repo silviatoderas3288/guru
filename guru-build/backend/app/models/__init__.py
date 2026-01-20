@@ -17,6 +17,7 @@ from .commute_preference import CommutePreference
 from .schedule_agent import ScheduleSuggestion, TaskCompletionFeedback, ScheduleHistory
 from .journal_entry import JournalEntry
 from .list_item import ListItem
+from .saved_media import SavedPodcast, SavedEpisode
 
 __all__ = [
     "User",
@@ -38,4 +39,6 @@ __all__ = [
     "ScheduleHistory",
     "JournalEntry",
     "ListItem",
+    "SavedPodcast",
+    "SavedEpisode",
 ]
