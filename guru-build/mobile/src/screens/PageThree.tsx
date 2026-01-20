@@ -19,6 +19,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { PodcastApiService, Podcast as ApiPodcast, PodcastEpisode as ApiEpisode } from '../services/podcastApi';
 import { usePreferencesStore } from '../store/usePreferencesStore';
+import schedulingAgentApi, { PodcastScheduleResponse, ScheduledPodcastEpisode } from '../services/schedulingAgentApi';
+import { CalendarApiService } from '../services/calendarApi';
+import { ListItemApiService, ListItemType } from '../services/listItemApi';
 
 const SettingsIcon = () => (
   <Svg width="19" height="20" viewBox="0 0 19 20" fill="none">
@@ -70,6 +73,19 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   const [loading, setLoading] = useState(true);
   const { toggleSettingsModal } = usePreferencesStore();
 
+  // AI Scheduling states
+  const [showEpisodeSelectionModal, setShowEpisodeSelectionModal] = useState(false);
+  const [showDatePickerModal, setShowDatePickerModal] = useState(false);
+  const [showAIResultModal, setShowAIResultModal] = useState(false);
+  const [showManualOptionsModal, setShowManualOptionsModal] = useState(false);
+  const [podcastEpisodes, setPodcastEpisodes] = useState<Episode[]>([]);
+  const [selectedEpisode, setSelectedEpisode] = useState<Episode | null>(null);
+  const [loadingEpisodes, setLoadingEpisodes] = useState(false);
+  const [aiScheduleLoading, setAiScheduleLoading] = useState(false);
+  const [aiScheduleResult, setAiScheduleResult] = useState<PodcastScheduleResponse | null>(null);
+  const [weekStartDate, setWeekStartDate] = useState(new Date());
+  const [isAddingToCalendar, setIsAddingToCalendar] = useState(false);
+
   // State for podcast data
   const [currentFavorites, setCurrentFavorites] = useState<Podcast[]>([]);
   const [recentEpisodes, setRecentEpisodes] = useState<Episode[]>([]);
@@ -80,6 +96,9 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Podcast[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+
+  // Library API base URL
+  const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
   // Define favorite podcasts (name or ID)
   const FAVORITE_PODCASTS = [
@@ -210,6 +229,120 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     }
   };
 
+  // Load saved podcasts from library
+  const loadSavedPodcasts = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/library/podcasts`);
+      if (response.ok) {
+        const data = await response.json();
+        const formatted = data.map((p: any) => ({
+          id: p.external_id,
+          title: p.title,
+          artist: p.author || 'Unknown',
+          duration: '',
+          artwork: p.image_url || 'https://via.placeholder.com/300',
+          url: p.feed_url,
+        }));
+        setSavedPodcasts(formatted);
+      }
+    } catch (error) {
+      console.log('Could not load saved podcasts:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadSavedPodcasts();
+  }, []);
+
+  // Search for podcasts
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+
+    setIsSearching(true);
+    try {
+      const results = await PodcastApiService.searchPodcasts(searchQuery, 10);
+      const formatted = results.map((podcast: ApiPodcast) => ({
+        id: podcast.id,
+        title: podcast.name,
+        artist: podcast.author,
+        duration: '',
+        artwork: podcast.artwork || 'https://via.placeholder.com/300',
+        url: podcast.url,
+        website: podcast.website,
+      }));
+      setSearchResults(formatted);
+    } catch (error) {
+      console.error('Search error:', error);
+      Alert.alert('Error', 'Failed to search podcasts');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
+  // Save podcast to library
+  const handleSavePodcast = async (podcast: Podcast) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/library/podcasts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          external_id: podcast.id,
+          title: podcast.title,
+          image_url: podcast.artwork,
+          author: podcast.artist,
+          feed_url: podcast.url,
+        }),
+      });
+
+      if (response.ok) {
+        Alert.alert('Saved!', `"${podcast.title}" has been added to your library`);
+        loadSavedPodcasts();
+      } else {
+        Alert.alert('Error', 'Failed to save podcast');
+      }
+    } catch (error) {
+      console.error('Save error:', error);
+      Alert.alert('Error', 'Failed to save podcast');
+    }
+  };
+
+  // Remove saved podcast
+  const handleRemoveSavedPodcast = (podcast: Podcast) => {
+    Alert.alert(
+      'Remove Podcast',
+      `Remove "${podcast.title}" from your saved list?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(`${API_BASE_URL}/api/v1/library/podcasts/${podcast.id}`, {
+                method: 'DELETE',
+              });
+              if (response.ok) {
+                loadSavedPodcasts();
+              }
+            } catch (error) {
+              console.error('Remove error:', error);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Check if podcast is saved
+  const isPodcastSaved = (podcastId: string) => {
+    return savedPodcasts.some(p => p.id === podcastId);
+  };
+
   const handleSchedule = (podcast: Podcast | Episode) => {
     setSelectedPodcast(podcast as Podcast);
     setShowScheduleModal(true);
@@ -222,17 +355,61 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
 
   const handleManualSchedule = () => {
     setShowScheduleOptionsModal(false);
+    setShowManualOptionsModal(true);
+  };
 
+  const handleManualToday = async () => {
+    setShowManualOptionsModal(false);
     if (!selectedPodcast) return;
 
-    // Determine the best link for the podcast/episode
-    const item = selectedPodcast as any;
-    let podcastLink = item.enclosureUrl || item.link || item.website || item.url || '';
+    try {
+      const item = selectedPodcast as any;
+      const podcastLink = item.enclosureUrl || item.link || item.website || item.url || '';
 
-    // Create description with podcast info
+      await ListItemApiService.createListItem({
+        text: `Listen: ${selectedPodcast.title}`,
+        completed: false,
+        item_type: ListItemType.TODO,
+        notes: podcastLink ? `Link: ${podcastLink}` : undefined,
+      });
+
+      Alert.alert('Added to Today', `"${selectedPodcast.title}" has been added to your today's todos!`);
+    } catch (error) {
+      console.error('Error adding to today:', error);
+      Alert.alert('Error', 'Failed to add to today\'s list');
+    }
+  };
+
+  const handleManualWeek = async () => {
+    setShowManualOptionsModal(false);
+    if (!selectedPodcast) return;
+
+    try {
+      const item = selectedPodcast as any;
+      const podcastLink = item.enclosureUrl || item.link || item.website || item.url || '';
+
+      await ListItemApiService.createListItem({
+        text: `Listen: ${selectedPodcast.title}`,
+        completed: false,
+        item_type: ListItemType.WEEKLY_GOAL,
+        notes: podcastLink ? `Link: ${podcastLink}` : undefined,
+      });
+
+      Alert.alert('Added to Weekly Goals', `"${selectedPodcast.title}" has been added to your weekly goals!`);
+    } catch (error) {
+      console.error('Error adding to weekly goals:', error);
+      Alert.alert('Error', 'Failed to add to weekly goals');
+    }
+  };
+
+  const handleManualCalendar = () => {
+    setShowManualOptionsModal(false);
+    if (!selectedPodcast) return;
+
+    const item = selectedPodcast as any;
+    const podcastLink = item.enclosureUrl || item.link || item.website || item.url || '';
     const description = podcastLink ? `Listen: ${podcastLink}` : '';
 
-    // Navigate to calendar tab with podcast data
     if (onNavigateToCalendar) {
       onNavigateToCalendar({
         title: selectedPodcast.title,
@@ -244,9 +421,141 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     }
   };
 
-  const handleAISchedule = () => {
+  const handleAISchedule = async () => {
     setShowScheduleOptionsModal(false);
-    Alert.alert('AI Schedule', 'AI scheduling feature coming soon!');
+
+    if (!selectedPodcast) return;
+
+    // Load episodes for this podcast
+    setLoadingEpisodes(true);
+    setShowEpisodeSelectionModal(true);
+
+    try {
+      const episodes = await PodcastApiService.getPodcastEpisodes(selectedPodcast.id, 10);
+      const formattedEpisodes = episodes.map((episode: ApiEpisode) => ({
+        id: String(episode.id),
+        title: episode.title,
+        podcast: selectedPodcast.title,
+        duration: PodcastApiService.formatDuration(episode.duration),
+        artwork: episode.image || selectedPodcast.artwork,
+        podcastArtwork: selectedPodcast.artwork,
+        link: episode.link,
+        enclosureUrl: episode.enclosureUrl,
+      }));
+      setPodcastEpisodes(formattedEpisodes);
+    } catch (error) {
+      console.error('Error loading episodes:', error);
+      Alert.alert('Error', 'Failed to load podcast episodes');
+      setShowEpisodeSelectionModal(false);
+    } finally {
+      setLoadingEpisodes(false);
+    }
+  };
+
+  const handleSelectEpisode = (episode: Episode | null) => {
+    setSelectedEpisode(episode);
+    setShowEpisodeSelectionModal(false);
+    setShowDatePickerModal(true);
+  };
+
+  const handleSelectAIChoose = () => {
+    setSelectedEpisode(null);
+    setShowEpisodeSelectionModal(false);
+    setShowDatePickerModal(true);
+  };
+
+  const getWeekStartDate = (date: Date): Date => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const navigateWeek = (direction: 'prev' | 'next') => {
+    const newDate = new Date(weekStartDate);
+    newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7));
+    setWeekStartDate(getWeekStartDate(newDate));
+  };
+
+  const handleGenerateAISchedule = async () => {
+    if (!selectedPodcast) return;
+
+    setShowDatePickerModal(false);
+    setAiScheduleLoading(true);
+    setShowAIResultModal(true);
+
+    try {
+      const dateString = weekStartDate.toISOString().split('T')[0];
+
+      const result = await schedulingAgentApi.schedulePodcast({
+        weekStartDate: dateString,
+        podcastId: selectedPodcast.id,
+        podcastTitle: selectedPodcast.title,
+        podcastImage: selectedPodcast.artwork,
+        selectedEpisodeId: selectedEpisode?.id || undefined,
+        scheduleType: 'ai',
+      });
+
+      setAiScheduleResult(result);
+    } catch (error) {
+      console.error('AI scheduling error:', error);
+      Alert.alert('Error', 'Failed to generate AI schedule. Please try again.');
+      setShowAIResultModal(false);
+    } finally {
+      setAiScheduleLoading(false);
+    }
+  };
+
+  const handleAcceptAISchedule = async () => {
+    if (!aiScheduleResult?.scheduledEpisodes?.length) return;
+
+    setIsAddingToCalendar(true);
+
+    try {
+      let addedCount = 0;
+
+      for (const episode of aiScheduleResult.scheduledEpisodes) {
+        if (episode.is_already_scheduled) continue;
+
+        // Create calendar event
+        try {
+          await CalendarApiService.createCalendarEvent({
+            summary: `🎧 ${episode.episode_title}`,
+            description: `Podcast: ${episode.podcast_title}\n\nScheduled by AI`,
+            start_time: episode.start_time,
+            end_time: episode.end_time,
+          });
+          addedCount++;
+        } catch (calError) {
+          console.error('Failed to create calendar event:', calError);
+        }
+      }
+
+      setShowAIResultModal(false);
+      setAiScheduleResult(null);
+
+      if (addedCount > 0) {
+        Alert.alert('Success', `Added ${addedCount} podcast episode(s) to your calendar!`);
+      } else {
+        Alert.alert('Info', 'All episodes were already scheduled.');
+      }
+    } catch (error) {
+      console.error('Error accepting schedule:', error);
+      Alert.alert('Error', 'Failed to add episodes to calendar.');
+    } finally {
+      setIsAddingToCalendar(false);
+    }
+  };
+
+  const formatScheduleTime = (isoString: string) => {
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return isoString;
+    }
   };
 
   const handlePlayPodcast = async () => {
@@ -324,6 +633,116 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
               resizeMode="contain"
             />
           </View>
+
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInputWrapper}>
+              <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={styles.searchIcon}>
+                <Path
+                  d="M21 21L16.65 16.65M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z"
+                  stroke="#999"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search podcasts..."
+                placeholderTextColor="#999"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={handleSearch}
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
+                  <Text style={styles.clearButtonText}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {searchQuery.length > 0 && (
+              <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+                <Text style={styles.searchButtonText}>Search</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Search Results Section */}
+          {searchResults.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Search Results</Text>
+              <Image
+                source={require('../../assets/under_pref.png')}
+                style={styles.sectionUnderline}
+                resizeMode="contain"
+              />
+              {isSearching ? (
+                <ActivityIndicator size="small" color="#4D5AEE" />
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+                  {searchResults.map((podcast, index) => (
+                    <TouchableOpacity
+                      key={podcast.id}
+                      style={styles.recommendationItemWrapper}
+                      onPress={() => handleSchedule(podcast)}
+                    >
+                      <ImageBackground
+                        source={require('../../assets/sq.png')}
+                        style={styles.squareContainer}
+                        resizeMode="stretch"
+                        tintColor={index % 2 === 0 ? '#4D5AEE' : '#FF9D00'}
+                      >
+                        <Image
+                          source={{ uri: podcast.artwork }}
+                          style={styles.innerSquareImage}
+                          resizeMode="cover"
+                        />
+                      </ImageBackground>
+                      <Text style={styles.searchResultTitle} numberOfLines={2}>{podcast.title}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+          )}
+
+          {/* Saved Podcasts Section */}
+          {savedPodcasts.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Your Saved Podcasts</Text>
+              <Image
+                source={require('../../assets/under_pref.png')}
+                style={styles.sectionUnderlineOrange}
+                resizeMode="contain"
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+                {savedPodcasts.map((podcast, index) => (
+                  <TouchableOpacity
+                    key={podcast.id}
+                    style={styles.recommendationItemWrapper}
+                    onPress={() => handleSchedule(podcast)}
+                    onLongPress={() => handleRemoveSavedPodcast(podcast)}
+                  >
+                    <ImageBackground
+                      source={require('../../assets/sq.png')}
+                      style={styles.squareContainer}
+                      resizeMode="stretch"
+                      tintColor={index % 2 === 0 ? '#FF3B30' : '#4D5AEE'}
+                    >
+                      <Image
+                        source={{ uri: podcast.artwork }}
+                        style={styles.innerSquareImage}
+                        resizeMode="cover"
+                      />
+                    </ImageBackground>
+                    <Text style={styles.searchResultTitle} numberOfLines={2}>{podcast.title}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <Text style={styles.savedHint}>Long press to remove</Text>
+            </View>
+          )}
 
           {/* Current Favorites Section */}
           <View style={styles.section}>
@@ -428,18 +847,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
             </ScrollView>
           </View>
 
-          {/* Schedule Button */}
-          <TouchableOpacity
-            style={styles.scheduleButton}
-            onPress={() => setShowScheduleModal(true)}
-          >
-            <Text style={styles.scheduleButtonText}>Schedule</Text>
-          </TouchableOpacity>
-
-      {/* Helper Text */}
-      <Text style={styles.helperText}>
-        Schedule some listening time in your calendar
-      </Text>
+         
 
       {/* Main Podcast Modal */}
       <Modal
@@ -495,6 +903,27 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
             >
               <Text style={styles.modalScheduleButtonText}>Schedule</Text>
             </TouchableOpacity>
+
+            {/* Save Button */}
+            {selectedPodcast && (
+              <TouchableOpacity
+                style={[
+                  styles.modalSaveButton,
+                  isPodcastSaved(selectedPodcast.id) && styles.modalSaveButtonSaved
+                ]}
+                onPress={() => {
+                  if (isPodcastSaved(selectedPodcast.id)) {
+                    handleRemoveSavedPodcast(selectedPodcast);
+                  } else {
+                    handleSavePodcast(selectedPodcast);
+                  }
+                }}
+              >
+                <Text style={styles.modalSaveButtonText}>
+                  {isPodcastSaved(selectedPodcast.id) ? '♥ Saved' : '♡ Save to Library'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -546,6 +975,297 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
             >
               <Text style={styles.manualScheduleText}>Manual Schedule</Text>
             </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Manual Schedule Options Modal (Today/Week/Calendar) */}
+      <Modal
+        visible={showManualOptionsModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowManualOptionsModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowManualOptionsModal(false)}
+        >
+          <Pressable style={styles.scheduleOptionsContent}>
+            <TouchableOpacity
+              style={styles.scheduleCloseButton}
+              onPress={() => setShowManualOptionsModal(false)}
+            >
+              <Text style={styles.scheduleCloseButtonText}>✕</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.scheduleOptionsTitle}>Schedule as...</Text>
+
+            <TouchableOpacity
+              style={styles.manualOptionButton}
+              onPress={handleManualToday}
+            >
+              <Text style={styles.manualOptionText}>📋 Add to Today's Todos</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.manualOptionButton}
+              onPress={handleManualWeek}
+            >
+              <Text style={styles.manualOptionText}>🎯 Add to Weekly Goals</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.manualOptionButton}
+              onPress={handleManualCalendar}
+            >
+              <Text style={styles.manualOptionText}>📅 Add to Calendar</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Episode Selection Modal */}
+      <Modal
+        visible={showEpisodeSelectionModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowEpisodeSelectionModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowEpisodeSelectionModal(false)}
+        >
+          <Pressable style={styles.episodeSelectionContent}>
+            <TouchableOpacity
+              style={styles.scheduleCloseButton}
+              onPress={() => setShowEpisodeSelectionModal(false)}
+            >
+              <Text style={styles.scheduleCloseButtonText}>✕</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.scheduleOptionsTitle}>Select an Episode</Text>
+            <Text style={styles.episodeSubtitle}>Choose a specific episode or let AI pick the best one</Text>
+
+            {loadingEpisodes ? (
+              <View style={styles.loadingEpisodesContainer}>
+                <ActivityIndicator size="large" color="#4D5AEE" />
+                <Text style={styles.loadingEpisodesText}>Loading episodes...</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.episodesList} showsVerticalScrollIndicator={false}>
+                {/* AI Choose Option */}
+                <TouchableOpacity
+                  style={styles.aiChooseButton}
+                  onPress={handleSelectAIChoose}
+                >
+                  <LinearGradient
+                    colors={['#FF9D00', '#4D5AEE']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.aiChooseGradient}
+                  >
+                    <Text style={styles.aiChooseText}>✨ Let AI Choose</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                {/* Episode List */}
+                {podcastEpisodes.map((episode) => (
+                  <TouchableOpacity
+                    key={episode.id}
+                    style={styles.episodeItem}
+                    onPress={() => handleSelectEpisode(episode)}
+                  >
+                    <Image
+                      source={{ uri: episode.artwork }}
+                      style={styles.episodeItemImage}
+                    />
+                    <View style={styles.episodeItemInfo}>
+                      <Text style={styles.episodeItemTitle} numberOfLines={2}>
+                        {episode.title}
+                      </Text>
+                      <Text style={styles.episodeItemDuration}>{episode.duration}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Date Picker Modal */}
+      <Modal
+        visible={showDatePickerModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDatePickerModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowDatePickerModal(false)}
+        >
+          <Pressable style={styles.datePickerContent}>
+            <TouchableOpacity
+              style={styles.scheduleCloseButton}
+              onPress={() => setShowDatePickerModal(false)}
+            >
+              <Text style={styles.scheduleCloseButtonText}>✕</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.scheduleOptionsTitle}>Select Week</Text>
+            <Text style={styles.episodeSubtitle}>
+              {selectedEpisode ? `Scheduling: ${selectedEpisode.title}` : 'AI will choose the best episode'}
+            </Text>
+
+            {/* Week Navigation */}
+            <View style={styles.weekNavigator}>
+              <TouchableOpacity onPress={() => navigateWeek('prev')} style={styles.weekNavButton}>
+                <Text style={styles.weekNavText}>◀</Text>
+              </TouchableOpacity>
+
+              <View style={styles.weekDisplay}>
+                <Text style={styles.weekText}>
+                  Week of {weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+              </View>
+
+              <TouchableOpacity onPress={() => navigateWeek('next')} style={styles.weekNavButton}>
+                <Text style={styles.weekNavText}>▶</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick Select Buttons */}
+            <View style={styles.quickSelectContainer}>
+              <TouchableOpacity
+                style={styles.quickSelectButton}
+                onPress={() => setWeekStartDate(getWeekStartDate(new Date()))}
+              >
+                <Text style={styles.quickSelectText}>This Week</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.quickSelectButton}
+                onPress={() => {
+                  const nextWeek = new Date();
+                  nextWeek.setDate(nextWeek.getDate() + 7);
+                  setWeekStartDate(getWeekStartDate(nextWeek));
+                }}
+              >
+                <Text style={styles.quickSelectText}>Next Week</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Generate Button */}
+            <TouchableOpacity
+              style={styles.generateButton}
+              onPress={handleGenerateAISchedule}
+            >
+              <LinearGradient
+                colors={['#FF9D00', '#4D5AEE']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.generateGradient}
+              >
+                <Text style={styles.generateText}>Generate Schedule</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* AI Schedule Result Modal */}
+      <Modal
+        visible={showAIResultModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowAIResultModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => !aiScheduleLoading && setShowAIResultModal(false)}
+        >
+          <Pressable style={styles.aiResultContent}>
+            {!aiScheduleLoading && (
+              <TouchableOpacity
+                style={styles.scheduleCloseButton}
+                onPress={() => setShowAIResultModal(false)}
+              >
+                <Text style={styles.scheduleCloseButtonText}>✕</Text>
+              </TouchableOpacity>
+            )}
+
+            {aiScheduleLoading ? (
+              <View style={styles.aiLoadingContainer}>
+                <ActivityIndicator size="large" color="#4D5AEE" />
+                <Text style={styles.aiLoadingText}>Finding the best time...</Text>
+                <Text style={styles.aiLoadingSubtext}>AI is analyzing your calendar</Text>
+              </View>
+            ) : aiScheduleResult ? (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text style={styles.scheduleOptionsTitle}>AI Schedule</Text>
+
+                {aiScheduleResult.scheduledEpisodes.length > 0 ? (
+                  <>
+                    {/* Scheduled Episodes */}
+                    {aiScheduleResult.scheduledEpisodes.map((episode, index) => (
+                      <View key={index} style={styles.scheduledEpisodeCard}>
+                        <View style={styles.scheduledEpisodeHeader}>
+                          <Text style={styles.scheduledDay}>{episode.day}</Text>
+                          <Text style={styles.scheduledTime}>
+                            {formatScheduleTime(episode.start_time)} - {formatScheduleTime(episode.end_time)}
+                          </Text>
+                        </View>
+                        <Text style={styles.scheduledEpisodeTitle} numberOfLines={2}>
+                          {episode.episode_title}
+                        </Text>
+                        {episode.duration_minutes && (
+                          <Text style={styles.scheduledDuration}>{episode.duration_minutes} min</Text>
+                        )}
+                        {episode.is_already_scheduled && (
+                          <Text style={styles.alreadyScheduledBadge}>Already Scheduled</Text>
+                        )}
+                      </View>
+                    ))}
+
+                    
+
+                    {/* Action Buttons */}
+                    <View style={styles.aiResultActions}>
+                      <TouchableOpacity
+                        style={styles.acceptButton}
+                        onPress={handleAcceptAISchedule}
+                        disabled={isAddingToCalendar}
+                      >
+                        <LinearGradient
+                          colors={['#4CAF50', '#45a049']}
+                          style={styles.acceptGradient}
+                        >
+                          {isAddingToCalendar ? (
+                            <ActivityIndicator size="small" color="#FFF" />
+                          ) : (
+                            <Text style={styles.acceptText}>Add to Calendar</Text>
+                          )}
+                        </LinearGradient>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.regenerateButton}
+                        onPress={handleGenerateAISchedule}
+                      >
+                        <Text style={styles.regenerateText}>Regenerate</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  <View style={styles.noScheduleContainer}>
+                    <Text style={styles.noScheduleText}>No episodes could be scheduled</Text>
+                    <Text style={styles.noScheduleSubtext}>
+                      {aiScheduleResult.reasoning || 'Try a different week or episode'}
+                    </Text>
+                  </View>
+                )}
+              </ScrollView>
+            ) : null}
           </Pressable>
         </Pressable>
       </Modal>
@@ -612,6 +1332,78 @@ const styles = StyleSheet.create({
     width: 200,
     height: 15,
     marginTop: 4,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 10,
+  },
+  searchInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 25,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#333',
+    paddingVertical: 0,
+  },
+  clearButton: {
+    padding: 5,
+  },
+  clearButtonText: {
+    color: '#999',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  searchButton: {
+    backgroundColor: '#4D5AEE',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    shadowColor: '#4D5AEE',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  searchButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
+  },
+  searchResultTitle: {
+    width: 100,
+    fontSize: 11,
+    fontFamily: 'Margarine',
+    color: '#000',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 14,
+  },
+  savedHint: {
+    fontSize: 11,
+    fontFamily: 'Margarine',
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 5,
+    fontStyle: 'italic',
   },
   section: {
     marginBottom: 30,
@@ -884,6 +1676,26 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     fontWeight: '700',
   },
+  modalSaveButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: '#FFF',
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  modalSaveButtonSaved: {
+    backgroundColor: 'rgba(255, 59, 48, 0.3)',
+    borderColor: '#FF3B30',
+  },
+  modalSaveButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
+  },
   scheduleOptionsContent: {
     backgroundColor: 'rgba(255, 157, 0, 0.85)',
     borderRadius: 20,
@@ -961,5 +1773,318 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Margarine',
     fontWeight: '600',
+  },
+  // Manual schedule options
+  manualOptionButton: {
+    backgroundColor: '#FFF',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 15,
+    alignItems: 'center',
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  manualOptionText: {
+    color: '#4D5AEE',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
+  },
+  // Episode selection modal
+  episodeSelectionContent: {
+    backgroundColor: 'rgba(77, 90, 238, 0.95)',
+    borderRadius: 20,
+    padding: 20,
+    width: '90%',
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  episodeSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  loadingEpisodesContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  loadingEpisodesText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    marginTop: 16,
+  },
+  episodesList: {
+    maxHeight: 400,
+  },
+  aiChooseButton: {
+    borderRadius: 15,
+    marginBottom: 15,
+    overflow: 'hidden',
+  },
+  aiChooseGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  aiChooseText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  episodeItem: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  episodeItemImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  episodeItemInfo: {
+    flex: 1,
+  },
+  episodeItemTitle: {
+    color: '#FFF',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    marginBottom: 4,
+  },
+  episodeItemDuration: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 12,
+    fontFamily: 'Margarine',
+  },
+  // Date picker modal
+  datePickerContent: {
+    backgroundColor: 'rgba(255, 157, 0, 0.95)',
+    borderRadius: 20,
+    padding: 24,
+    width: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  weekNavigator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  weekNavButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekNavText: {
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  weekDisplay: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  weekText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
+  },
+  quickSelectContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 20,
+  },
+  quickSelectButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+  },
+  quickSelectText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
+  },
+  generateButton: {
+    borderRadius: 25,
+    overflow: 'hidden',
+    marginTop: 10,
+  },
+  generateGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+  },
+  generateText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  // AI Result modal
+  aiResultContent: {
+    backgroundColor: 'rgba(77, 90, 238, 0.95)',
+    borderRadius: 20,
+    padding: 24,
+    width: '90%',
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  aiLoadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  aiLoadingText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    marginTop: 20,
+  },
+  aiLoadingSubtext: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    marginTop: 8,
+  },
+  scheduledEpisodeCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  scheduledEpisodeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  scheduledDay: {
+    color: '#FF9D00',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  scheduledTime: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+  },
+  scheduledEpisodeTitle: {
+    color: '#FFF',
+    fontSize: 15,
+    fontFamily: 'Margarine',
+    marginBottom: 6,
+  },
+  scheduledDuration: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 13,
+    fontFamily: 'Margarine',
+  },
+  alreadyScheduledBadge: {
+    color: '#4CAF50',
+    fontSize: 12,
+    fontFamily: 'Margarine',
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
+  reasoningContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  reasoningTitle: {
+    color: '#FF9D00',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  reasoningText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 13,
+    fontFamily: 'Margarine',
+    lineHeight: 20,
+  },
+  aiResultActions: {
+    marginTop: 10,
+  },
+  acceptButton: {
+    borderRadius: 25,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  acceptGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    borderRadius: 25,
+  },
+  acceptText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
+  },
+  regenerateButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 25,
+    alignItems: 'center',
+  },
+  regenerateText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
+  },
+  noScheduleContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  noScheduleText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    marginBottom: 10,
+  },
+  noScheduleSubtext: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    textAlign: 'center',
   },
 });

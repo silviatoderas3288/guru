@@ -14,9 +14,12 @@ from app.schemas.schedule import (
     ScheduleStatusResponse,
     WorkoutScheduleRequest,
     WorkoutScheduleResponse,
+    PodcastScheduleRequest,
+    PodcastScheduleResponse,
 )
 from app.services.scheduling_agent_service import SchedulingAgentService
 from app.services.workout_scheduler_service import WorkoutSchedulerService
+from app.services.podcast_scheduler_service import PodcastSchedulerService
 from app.models.user import User
 from app.services.auth_service import get_current_user
 
@@ -177,4 +180,31 @@ async def schedule_workouts(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to schedule workouts: {str(e)}",
+        )
+
+
+@router.post("/podcasts/schedule", response_model=PodcastScheduleResponse)
+async def schedule_podcast(
+    request: PodcastScheduleRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Schedule podcast listening sessions for the week.
+
+    This endpoint:
+    - Fetches episodes from the specified podcast
+    - Checks which episodes are already on the calendar
+    - Uses AI to find optimal listening times
+    - Optionally schedules a specific episode if selectedEpisodeId is provided
+    """
+    service = PodcastSchedulerService(db, current_user)
+
+    try:
+        result = await service.schedule_podcast(request)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to schedule podcast: {str(e)}",
         )

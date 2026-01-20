@@ -114,6 +114,42 @@ export interface WorkoutScheduleResponse {
   generatedAt: string;
 }
 
+// Podcast-specific scheduling types
+export interface PodcastScheduleRequest {
+  weekStartDate: string;
+  podcastId: string;
+  podcastTitle: string;
+  podcastImage?: string;
+  selectedEpisodeId?: string;
+  scheduleType: 'ai' | 'today' | 'week';
+  forceReschedule?: boolean;
+}
+
+export interface ScheduledPodcastEpisode {
+  episode_id: string;
+  podcast_id: string;
+  podcast_title: string;
+  episode_title: string;
+  description?: string;
+  duration_minutes?: number;
+  day: string;
+  start_time: string;
+  end_time: string;
+  calendar_event_id?: string;
+  is_already_scheduled: boolean;
+}
+
+export interface PodcastScheduleResponse {
+  success: boolean;
+  weekStartDate: string;
+  scheduledEpisodes: ScheduledPodcastEpisode[];
+  alreadyScheduledCount: number;
+  newlyScheduledCount: number;
+  reasoning: string;
+  warnings: ScheduleWarning[];
+  generatedAt: string;
+}
+
 class SchedulingAgentApiService {
   /**
    * Get the start of the current week (Monday)
@@ -268,6 +304,49 @@ class SchedulingAgentApiService {
 
     const data = await response.json();
     console.log('Workouts scheduled successfully:', data);
+    return data;
+  }
+
+  /**
+   * Schedule podcast listening sessions
+   * - Fetches episodes from the specified podcast
+   * - Checks which episodes are already on the calendar
+   * - Uses AI to find optimal listening times
+   * - Can schedule a specific episode if selectedEpisodeId is provided
+   */
+  async schedulePodcast(
+    request: PodcastScheduleRequest
+  ): Promise<PodcastScheduleResponse> {
+    const weekStartDate = request.weekStartDate || this.getWeekStartDate();
+
+    const payload = {
+      weekStartDate,
+      podcastId: request.podcastId,
+      podcastTitle: request.podcastTitle,
+      podcastImage: request.podcastImage || null,
+      selectedEpisodeId: request.selectedEpisodeId || null,
+      scheduleType: request.scheduleType || 'ai',
+      forceReschedule: request.forceReschedule ?? false,
+    };
+
+    console.log('Scheduling podcast with payload:', payload);
+
+    const response = await fetch(`${API_URL}/api/v1/schedule/agent/podcasts/schedule`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Podcast scheduling failed:', errorText);
+      throw new Error(`Failed to schedule podcast: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('Podcast scheduled successfully:', data);
     return data;
   }
 }

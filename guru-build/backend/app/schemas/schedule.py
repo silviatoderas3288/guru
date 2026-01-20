@@ -144,3 +144,52 @@ class WorkoutScheduleResponse(BaseModel):
     reasoning: str  # AI explanation of scheduling decisions
     warnings: List[ScheduleWarning] = []
     generatedAt: datetime
+
+
+# Podcast-specific scheduling schemas
+class PodcastEpisode(BaseModel):
+    """A podcast episode from Podcast Index."""
+    id: str
+    title: str
+    description: Optional[str] = None
+    duration: Optional[int] = None  # Duration in seconds
+    datePublished: Optional[int] = None  # Unix timestamp
+    enclosureUrl: Optional[str] = None
+
+
+class PodcastScheduleRequest(BaseModel):
+    """Request to schedule podcast episodes."""
+    weekStartDate: date
+    podcastId: str  # The Podcast Index feed ID
+    podcastTitle: str
+    podcastImage: Optional[str] = None
+    selectedEpisodeId: Optional[str] = None  # Specific episode to schedule, or None for AI to pick
+    scheduleType: str = "ai"  # "ai" for AI scheduling, "today" for add to today's todo, "week" for add to weekly goals
+    forceReschedule: bool = False
+
+
+class ScheduledPodcastEpisode(BaseModel):
+    """A scheduled podcast episode event."""
+    episode_id: str
+    podcast_id: str
+    podcast_title: str
+    episode_title: str
+    description: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    day: str  # e.g., "Monday", "Tuesday"
+    start_time: str  # ISO format datetime
+    end_time: str  # ISO format datetime
+    calendar_event_id: Optional[str] = None  # Existing calendar event ID if already scheduled
+    is_already_scheduled: bool = False
+
+
+class PodcastScheduleResponse(BaseModel):
+    """Response from podcast scheduling."""
+    success: bool
+    weekStartDate: date
+    scheduledEpisodes: List[ScheduledPodcastEpisode]
+    alreadyScheduledCount: int
+    newlyScheduledCount: int
+    reasoning: str
+    warnings: List[ScheduleWarning] = []
+    generatedAt: datetime
