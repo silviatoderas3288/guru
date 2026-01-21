@@ -1889,6 +1889,13 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                         <Text style={styles.listItemText}>{goal.text}</Text>
                       </TouchableOpacity>
                   )}
+                  <TouchableOpacity
+                    onPress={() => openSchedulePopup(goal, 'weekly')}
+                    activeOpacity={0.7}
+                    style={styles.calendarIconButton}
+                  >
+                    <CalendarIcon color="#4D5AEE" />
+                  </TouchableOpacity>
                 </View>
               </View>
             </SwipeableListItem>
