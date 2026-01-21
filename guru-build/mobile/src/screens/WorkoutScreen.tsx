@@ -945,10 +945,10 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
             </ScrollView>
 
             <TouchableOpacity
-              style={styles.modalCloseButton}
+              style={styles.scheduleCloseButton}
               onPress={() => setShowScheduleModal(false)}
             >
-              <Text style={styles.modalCloseText}>Cancel</Text>
+              <Text style={styles.scheduleCloseButtonText}>✕</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -1859,6 +1859,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Margarine',
     color: '#333',
+  },
+  scheduleCloseButton: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  scheduleCloseButtonText: {
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   // Date Picker Modal Styles
   datePickerModalOverlay: {

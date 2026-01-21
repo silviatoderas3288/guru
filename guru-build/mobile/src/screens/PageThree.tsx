@@ -143,6 +143,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Podcast[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isFromRecentEpisodes, setIsFromRecentEpisodes] = useState(false);
 
   // Library API base URL
   const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
@@ -467,6 +468,10 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     // Load episodes and show episode selection modal directly
     setLoadingEpisodes(true);
     setShowEpisodeSelectionModal(true);
+    
+    // Check if this is from Recent Episodes section
+    const isRecent = recentEpisodes.some(ep => ep.id === (podcast as any).id);
+    setIsFromRecentEpisodes(isRecent);
 
     try {
       const episodes = await PodcastApiService.getPodcastEpisodes((podcast as Podcast).id, 20);
@@ -1158,21 +1163,42 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
               style={styles.manualOptionButton}
               onPress={handleManualToday}
             >
-              <Text style={styles.manualOptionText}>📋 Add to Today's Todos</Text>
+              <LinearGradient
+                colors={['#4D5AEE', '#4D5AEE']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.manualOptionButtonGradient}
+              >
+                <Text style={styles.manualOptionText}>Add to Today's Todos</Text>
+              </LinearGradient>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.manualOptionButton}
               onPress={handleManualWeek}
             >
-              <Text style={styles.manualOptionText}>🎯 Add to Weekly Goals</Text>
+              <LinearGradient
+                colors={['#4D5AEE', '#4D5AEE']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.manualOptionButtonGradient}
+              >
+                <Text style={styles.manualOptionText}>Add to Weekly Goals</Text>
+              </LinearGradient>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.manualOptionButton}
               onPress={handleManualCalendar}
             >
-              <Text style={styles.manualOptionText}>📅 Add to Calendar</Text>
+              <LinearGradient
+                colors={['#4D5AEE', '#4D5AEE']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.manualOptionButtonGradient}
+              >
+                <Text style={styles.manualOptionText}>Add to Calendar</Text>
+              </LinearGradient>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -1183,16 +1209,25 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
         visible={showEpisodeSelectionModal}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowEpisodeSelectionModal(false)}
+        onRequestClose={() => {
+          setShowEpisodeSelectionModal(false);
+          setIsFromRecentEpisodes(false);
+        }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setShowEpisodeSelectionModal(false)}
+          onPress={() => {
+            setShowEpisodeSelectionModal(false);
+            setIsFromRecentEpisodes(false);
+          }}
         >
           <Pressable style={styles.episodeSelectionContent}>
             <TouchableOpacity
               style={styles.scheduleCloseButton}
-              onPress={() => setShowEpisodeSelectionModal(false)}
+              onPress={() => {
+                setShowEpisodeSelectionModal(false);
+                setIsFromRecentEpisodes(false);
+              }}
             >
               <Text style={styles.scheduleCloseButtonText}>✕</Text>
             </TouchableOpacity>
@@ -1221,34 +1256,54 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                 <Text style={styles.loadingEpisodesText}>Loading episodes...</Text>
               </View>
             ) : (
-              <ScrollView style={styles.episodesList} showsVerticalScrollIndicator={false}>
-                {/* Episode List */}
-                {podcastEpisodes.map((episode) => (
-                  <View key={episode.id} style={styles.episodeItemContainer}>
-                    <TouchableOpacity
-                      style={styles.episodeItem}
-                      onPress={() => handleSelectEpisode(episode)}
+              <View>
+                <ScrollView style={styles.episodesList} showsVerticalScrollIndicator={false}>
+                  {/* Episode List */}
+                  {podcastEpisodes.map((episode) => (
+                    <View key={episode.id} style={styles.episodeItemContainer}>
+                      <TouchableOpacity
+                        style={styles.episodeItem}
+                        onPress={() => handleSelectEpisode(episode)}
+                      >
+                        <Image
+                          source={{ uri: episode.artwork }}
+                          style={styles.episodeItemImage}
+                        />
+                        <View style={styles.episodeItemInfo}>
+                          <Text style={styles.episodeItemTitle} numberOfLines={2}>
+                            {episode.title}
+                          </Text>
+                          <Text style={styles.episodeItemDuration}>{episode.duration}</Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.calendarButtonBottom}
+                        onPress={() => handleEpisodeManualSchedule(episode)}
+                      >
+                        <CalendarIcon color="#FF9D00" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+                {isFromRecentEpisodes && (
+                  <TouchableOpacity
+                    style={styles.manualScheduleButtonSmall}
+                    onPress={() => {
+                      setShowEpisodeSelectionModal(false);
+                      handleManualCalendar();
+                    }}
+                  >
+                    <LinearGradient
+                      colors={['#4D5AEE', '#FF9D00']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.manualScheduleButtonSmallGradient}
                     >
-                      <Image
-                        source={{ uri: episode.artwork }}
-                        style={styles.episodeItemImage}
-                      />
-                      <View style={styles.episodeItemInfo}>
-                        <Text style={styles.episodeItemTitle} numberOfLines={2}>
-                          {episode.title}
-                        </Text>
-                        <Text style={styles.episodeItemDuration}>{episode.duration}</Text>
-                      </View>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.calendarButtonBottom}
-                      onPress={() => handleEpisodeManualSchedule(episode)}
-                    >
-                      <CalendarIcon color="#FF9D00" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </ScrollView>
+                      <Text style={styles.manualScheduleButtonSmallText}>Manual Schedule</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
           </Pressable>
         </Pressable>
@@ -2021,20 +2076,23 @@ const styles = StyleSheet.create({
   },
   // Manual schedule options
   manualOptionButton: {
-    backgroundColor: '#FFF',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
     borderRadius: 15,
-    alignItems: 'center',
     marginBottom: 12,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
+  manualOptionButtonGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   manualOptionText: {
-    color: '#4D5AEE',
+    color: '#FFF',
     fontSize: 16,
     fontFamily: 'Margarine',
     fontWeight: '600',
@@ -2379,5 +2437,27 @@ const styles = StyleSheet.create({
   episodeItemContainer: {
     marginBottom: 8,
     position: 'relative',
+  },
+  manualScheduleButtonSmall: {
+    borderRadius: 25,
+    marginBottom: 15,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  manualScheduleButtonSmallGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manualScheduleButtonSmallText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '700',
   },
 });
