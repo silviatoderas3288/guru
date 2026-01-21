@@ -41,6 +41,46 @@ const PlayButtonIcon = () => (
   </Svg>
 );
 
+const AIIcon = ({ size = 28 }: { size?: number }) => (
+  <Image
+    source={require('../../assets/ai.png')}
+    style={{ width: size, height: size, resizeMode: 'contain' }}
+  />
+);
+
+const CalendarIcon = ({ color = '#FF9D00' }: { color?: string }) => (
+  <Svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+    <Path
+      d="M14.25 3H3.75C2.92157 3 2.25 3.67157 2.25 4.5V15C2.25 15.8284 2.92157 16.5 3.75 16.5H14.25C15.0784 16.5 15.75 15.8284 15.75 15V4.5C15.75 3.67157 15.0784 3 14.25 3Z"
+      stroke={color}
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M12 1.5V4.5"
+      stroke={color}
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M6 1.5V4.5"
+      stroke={color}
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M2.25 7.5H15.75"
+      stroke={color}
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
 interface Podcast {
   id: string;
   title: string;
@@ -470,10 +510,9 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       const title = selectedEpisode ? `${selectedEpisode.title} - ${selectedPodcast.title}` : selectedPodcast.title;
 
       await ListItemApiService.createListItem({
-        text: `Listen: ${title}`,
+        text: podcastLink ? `Listen: ${title} (${podcastLink})` : `Listen: ${title}`,
         completed: false,
         item_type: ListItemType.TODO,
-        notes: podcastLink ? `Link: ${podcastLink}` : undefined,
       });
 
       Alert.alert('Added to Today', `"${title}" has been added to your today's todos!`);
@@ -493,10 +532,9 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       const title = selectedEpisode ? `${selectedEpisode.title} - ${selectedPodcast.title}` : selectedPodcast.title;
 
       await ListItemApiService.createListItem({
-        text: `Listen: ${title}`,
+        text: podcastLink ? `Listen: ${title} (${podcastLink})` : `Listen: ${title}`,
         completed: false,
         item_type: ListItemType.WEEKLY_GOAL,
-        notes: podcastLink ? `Link: ${podcastLink}` : undefined,
       });
 
       Alert.alert('Added to Weekly Goals', `"${title}" has been added to your weekly goals!`);
@@ -1159,6 +1197,21 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
               <Text style={styles.scheduleCloseButtonText}>✕</Text>
             </TouchableOpacity>
 
+            {/* AI Choose Icon - Top Right */}
+            <TouchableOpacity
+              style={styles.aiChooseIconButton}
+              onPress={handleSelectAIChoose}
+            >
+              <LinearGradient
+                colors={['#FF9D00', '#4D5AEE']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.aiIconGradient}
+              >
+                <AIIcon size={20} />
+              </LinearGradient>
+            </TouchableOpacity>
+
             <Text style={styles.scheduleOptionsTitle}>Select an Episode</Text>
             <Text style={styles.episodeSubtitle}>Choose a specific episode or let AI pick the best one</Text>
 
@@ -1169,39 +1222,6 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
               </View>
             ) : (
               <ScrollView style={styles.episodesList} showsVerticalScrollIndicator={false}>
-                {/* AI Choose Option */}
-                <TouchableOpacity
-                  style={styles.aiChooseButton}
-                  onPress={handleSelectAIChoose}
-                >
-                  <LinearGradient
-                    colors={['#FF9D00', '#4D5AEE']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.aiChooseGradient}
-                  >
-                    <Text style={styles.aiChooseText}>✨ Let AI Choose</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* Manual Schedule Option */}
-                <TouchableOpacity
-                  style={styles.manualScheduleButton}
-                  onPress={() => {
-                    setShowEpisodeSelectionModal(false);
-                    setShowScheduleOptionsModal(true);
-                  }}
-                >
-                  <LinearGradient
-                    colors={['#4D5AEE', '#FF9D00']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.manualScheduleGradient}
-                  >
-                    <Text style={styles.manualScheduleText}>📋 Manual Schedule</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
                 {/* Episode List */}
                 {podcastEpisodes.map((episode) => (
                   <View key={episode.id} style={styles.episodeItemContainer}>
@@ -1221,10 +1241,10 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                       </View>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.episodeManualButton}
+                      style={styles.calendarButtonBottom}
                       onPress={() => handleEpisodeManualSchedule(episode)}
                     >
-                      <Text style={styles.episodeManualButtonText}>+ Add Manually</Text>
+                      <CalendarIcon color="#FF9D00" />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -1368,19 +1388,20 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
               </ScrollView>
             ) : (
               <View style={styles.loadingEpisodesContainer}>
-                <Text style={styles.loadingEpisodesText}>No episodes saved yet</Text>
+
+                
                 <TouchableOpacity
                   style={styles.exploreEpisodesButton}
                   onPress={handleExploreEpisodes}
                   disabled={loadingEpisodes}
                 >
                   <LinearGradient
-                    colors={['#FF9D00', '#4D5AEE']}
+                    colors={['#FF9D00', '#FF9D00']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.exploreEpisodesGradient}
                   >
-                    <Text style={styles.exploreEpisodesText}>🔍 Explore Episodes</Text>
+                    <Text style={styles.exploreEpisodesText}> Explore Episodes</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -2052,21 +2073,36 @@ const styles = StyleSheet.create({
   episodesList: {
     maxHeight: 400,
   },
-  aiChooseButton: {
-    borderRadius: 15,
-    marginBottom: 15,
-    overflow: 'hidden',
+  aiChooseIconButton: {
+    position: 'absolute',
+    right: 20,
+    top: 20,
+    zIndex: 20,
   },
-  aiChooseGradient: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
+  aiIconGradient: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
     alignItems: 'center',
   },
+  calendarButtonBottom: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    zIndex: 5,
+  },
+  aiChooseButton: {
+    display: 'none',
+  },
+  aiChooseGradient: {
+    display: 'none',
+  },
   aiChooseText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontFamily: 'Margarine',
-    fontWeight: '700',
+    display: 'none',
+  },
+  aiIconContainer: {
+    display: 'none',
   },
   episodeItem: {
     flexDirection: 'row',
@@ -2096,7 +2132,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Margarine',
   },
-  // Date picker modal
   datePickerContent: {
     backgroundColor: 'rgba(255, 157, 0, 0.95)',
     borderRadius: 20,
@@ -2328,40 +2363,21 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     fontWeight: '700',
   },
-  manualScheduleButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 15,
-  },
+ 
   manualScheduleGradient: {
     paddingVertical: 14,
     paddingHorizontal: 20,
     alignItems: 'center',
     borderRadius: 12,
   },
-  manualScheduleText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontFamily: 'Margarine',
-    fontWeight: '700',
-  },
+  // manualScheduleText: {
+  //   color: '#FFF',
+  //   fontSize: 16,
+  //   fontFamily: 'Margarine',
+  //   fontWeight: '700',
+  // },
   episodeItemContainer: {
-    marginBottom: 12,
-  },
-  episodeManualButton: {
-    backgroundColor: 'rgba(77, 90, 238, 0.2)',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginTop: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#4D5AEE',
-  },
-  episodeManualButtonText: {
-    color: '#4D5AEE',
-    fontSize: 12,
-    fontFamily: 'Margarine',
-    fontWeight: '600',
+    marginBottom: 8,
+    position: 'relative',
   },
 });

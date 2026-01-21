@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { usePreferencesStore } from '../store/usePreferencesStore';
+import schedulingAgentApi, { GenerateScheduleResponse, ScheduledEvent } from '../services/schedulingAgentApi';
 
 interface Task {
   id: string;
@@ -118,6 +119,13 @@ const TrashIconSmall = ({ color = '#999' }: { color?: string }) => (
   </Svg>
 );
 
+const AIIcon = ({ size = 28 }: { size?: number }) => (
+  <Image
+    source={require('../../assets/ai.png')}
+    style={{ width: size, height: size, resizeMode: 'contain' }}
+  />
+);
+
 interface PodcastScheduleData {
   title: string;
   link?: string;
@@ -140,26 +148,28 @@ interface PageTwoProps {
 interface SwipeableListItemProps {
   children: React.ReactNode;
   onDelete: () => void;
+  onAdd?: () => void;
+  addActionLabel?: string;
 }
 
-const SwipeableListItem: React.FC<SwipeableListItemProps> = ({ children, onDelete }) => {
+const SwipeableListItem: React.FC<SwipeableListItemProps> = ({ children, onDelete, onAdd, addActionLabel = 'Add' }) => {
   const pan = useRef(new Animated.Value(0)).current;
 
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        // Only respond to horizontal swipes (left swipe)
+        // Respond to horizontal swipes (both left and right)
         return Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
       },
       onPanResponderMove: (_, gestureState) => {
-        // Only allow left swipe (negative dx)
-        if (gestureState.dx < 0) {
+        // Allow both left swipe (negative dx) for delete and right swipe (positive dx) for add
+        if (gestureState.dx < 0 || gestureState.dx > 0) {
           pan.setValue(gestureState.dx);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
+        // Left swipe (negative) for delete
         if (gestureState.dx < -100) {
-          // Swipe threshold reached - delete
           Animated.timing(pan, {
             toValue: -300,
             duration: 200,
@@ -167,8 +177,19 @@ const SwipeableListItem: React.FC<SwipeableListItemProps> = ({ children, onDelet
           }).start(() => {
             onDelete();
           });
-        } else {
-          // Snap back
+        } 
+        // Right swipe (positive) for add
+        else if (gestureState.dx > 100 && onAdd) {
+          Animated.timing(pan, {
+            toValue: 300,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            onAdd();
+          });
+        } 
+        // Snap back
+        else {
           Animated.spring(pan, {
             toValue: 0,
             useNativeDriver: true,
@@ -180,6 +201,11 @@ const SwipeableListItem: React.FC<SwipeableListItemProps> = ({ children, onDelet
 
   return (
     <View style={styles.swipeableContainer}>
+      {onAdd && (
+        <View style={[styles.deleteBackground, styles.addBackground]}>
+          <Text style={styles.addBackgroundText}>Add to list</Text>
+        </View>
+      )}
       <View style={styles.deleteBackground}>
         <TrashIcon />
       </View>
@@ -197,6 +223,7 @@ const SwipeableListItem: React.FC<SwipeableListItemProps> = ({ children, onDelet
     </View>
   );
 };
+
 
 export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutScheduleData, onClearPodcastData, onClearWorkoutData }) => {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -252,6 +279,18 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
   const [eventEndTimeObj, setEventEndTimeObj] = useState(new Date());
   const [deadlineDateObj, setDeadlineDateObj] = useState(new Date());
   const [deadlineTimeObj, setDeadlineTimeObj] = useState(new Date());
+
+  // AI weekly goals modal state
+  const [showAIWeeklyGoalsModal, setShowAIWeeklyGoalsModal] = useState(false);
+  const [aiWeeklyScheduleResult, setAIWeeklyScheduleResult] = useState<GenerateScheduleResponse | null>(null);
+  const [aiWeeklyScheduleLoading, setAIWeeklyScheduleLoading] = useState(false);
+  const [aiWeeklySelectedGoalIds, setAiWeeklySelectedGoalIds] = useState<Set<string>>(new Set());
+  const [aiWeeklyGoalsOrder, setAiWeeklyGoalsOrder] = useState<string[]>([]);
+
+  // AI todo modal state
+  const [showAITodoModal, setShowAITodoModal] = useState(false);
+  const [aiTodoSelectedDate, setAiTodoSelectedDate] = useState<'today' | 'tomorrow'>('today');
+  const [aiSelectedTodoIds, setAiSelectedTodoIds] = useState<Set<string>>(new Set());
 
   // Check authentication on mount
   useEffect(() => {
@@ -914,6 +953,8 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
     const goal = weeklyGoals.find(g => g.id === id);
     if (!goal) return;
 
+    const newCompletedState = !goal.completed;
+
     // Only toggle completion, don't open schedule popup
     try {
       if (goal.completed) {
@@ -945,7 +986,18 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           completed: true,
         });
       }
-      
+
+      // Sync matching todo item with the same text
+      const matchingTodo = todoItems.find(t => t.text === goal.text);
+      if (matchingTodo && matchingTodo.completed !== newCompletedState) {
+        setTodoItems(todoItems.map(t =>
+          t.text === goal.text ? { ...t, completed: newCompletedState } : t
+        ));
+        await ListItemApiService.updateListItem(matchingTodo.id, {
+          completed: newCompletedState,
+        });
+      }
+
       // Reload lists to reflect any cascading changes (parent/child completion)
       await Promise.all([loadWeeklyGoals(), loadTodoItems()]);
     } catch (error) {
@@ -1025,6 +1077,134 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
     );
   };
 
+  const addWeeklyGoalToTodo = async (goal: ListItem) => {
+    try {
+      // Create a new todo item with the same text
+      const newTodoItem = await ListItemApiService.createListItem({
+        text: goal.text,
+        completed: false,
+        item_type: ListItemType.TODO,
+      });
+
+      // Add to todo list immediately for optimistic update
+      const todoToAdd: ListItem = {
+        id: newTodoItem.id,
+        text: newTodoItem.text,
+        completed: newTodoItem.completed,
+        calendar_event_id: newTodoItem.calendar_event_id,
+      };
+
+      setTodoItems(prevItems => [...prevItems, todoToAdd]);
+
+      // Show success feedback
+      Alert.alert('Success', `"${goal.text}" added to to-do list!`, [
+        { text: 'OK', onPress: () => {} }
+      ]);
+
+      console.log(`Added "${goal.text}" to to-do list`);
+    } catch (error) {
+      console.error('Error adding weekly goal to todo:', error);
+      Alert.alert('Error', 'Failed to add goal to to-do list. Please try again.');
+    }
+  };
+
+  const openAIWeeklyGoalsModal = () => {
+    // Initialize selected goals: pre-select those already scheduled
+    const scheduledIds = new Set(
+      weeklyGoals.filter(g => g.calendar_event_id).map(g => g.id)
+    );
+    setAiWeeklySelectedGoalIds(scheduledIds);
+    // Initialize order: maintain current order of goals
+    setAiWeeklyGoalsOrder(weeklyGoals.map(g => g.id));
+    setShowAIWeeklyGoalsModal(true);
+  };
+
+  const toggleWeeklyGoalSelection = (goalId: string) => {
+    setAiWeeklySelectedGoalIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(goalId)) {
+        newSet.delete(goalId);
+      } else {
+        newSet.add(goalId);
+      }
+      return newSet;
+    });
+  };
+
+  const moveGoalUp = (goalId: string) => {
+    setAiWeeklyGoalsOrder(prev => {
+      const index = prev.indexOf(goalId);
+      if (index <= 0) return prev;
+      const newOrder = [...prev];
+      [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+      return newOrder;
+    });
+  };
+
+  const moveGoalDown = (goalId: string) => {
+    setAiWeeklyGoalsOrder(prev => {
+      const index = prev.indexOf(goalId);
+      if (index === -1 || index >= prev.length - 1) return prev;
+      const newOrder = [...prev];
+      [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+      return newOrder;
+    });
+  };
+
+  const handleAIWeeklyGoalsSchedule = async () => {
+    setAIWeeklyScheduleLoading(true);
+    try {
+      const today = new Date();
+      const dateString = today.toISOString().split('T')[0];
+
+      // Build prioritized goals list based on user's ranking and selection
+      const prioritizedGoals = aiWeeklyGoalsOrder
+        .map((id, index) => {
+          const goal = weeklyGoals.find(g => g.id === id);
+          if (!goal) return null;
+          const isSelected = aiWeeklySelectedGoalIds.has(id);
+          return {
+            id: goal.id,
+            text: goal.text,
+            priority: index + 1, // 1 = highest priority
+            isSelected, // true = must schedule, false = optional/lower priority
+            existingEventId: goal.calendar_event_id, // existing calendar event to modify/delete
+          };
+        })
+        .filter(g => g !== null);
+
+      // Create modification request describing user's intent
+      const selectedGoals = prioritizedGoals.filter(g => g.isSelected);
+      const unselectedGoals = prioritizedGoals.filter(g => !g.isSelected);
+
+      let modificationRequest = `Schedule goals in priority order. `;
+      if (selectedGoals.length > 0) {
+        modificationRequest += `MUST schedule these (priority order): ${selectedGoals.map(g => g.text).join(', ')}. `;
+      }
+      if (unselectedGoals.length > 0) {
+        modificationRequest += `OPTIONAL (only if time permits, remove existing slots): ${unselectedGoals.map(g => g.text).join(', ')}.`;
+      }
+
+      const result = await schedulingAgentApi.generateSchedule({
+        weekStartDate: dateString,
+        forceRegenerate: true,
+        modificationRequest: modificationRequest,
+      });
+
+      setAIWeeklyScheduleResult(result);
+      // Modal stays open to show the results
+    } catch (error) {
+      console.error('Error generating AI schedule for weekly goals:', error);
+      Alert.alert(
+        'AI Scheduling Error',
+        'Failed to generate schedule. Please make sure you have set your preferences in Settings.'
+      );
+      setShowAIWeeklyGoalsModal(false);
+    } finally {
+      setAIWeeklyScheduleLoading(false);
+    }
+  };
+
   const startEditingWeeklyGoal = (goal: ListItem) => {
     setEditingWeeklyGoalId(goal.id);
     setEditingWeeklyGoalText(goal.text);
@@ -1099,6 +1279,8 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
     const item = todoItems.find(i => i.id === id);
     if (!item) return;
 
+    const newCompletedState = !item.completed;
+
     try {
       if (item.completed) {
         // If unchecking, delete the calendar event and mark as incomplete
@@ -1129,7 +1311,18 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           completed: true,
         });
       }
-      
+
+      // Sync matching weekly goal with the same text
+      const matchingGoal = weeklyGoals.find(g => g.text === item.text);
+      if (matchingGoal && matchingGoal.completed !== newCompletedState) {
+        setWeeklyGoals(weeklyGoals.map(g =>
+          g.text === item.text ? { ...g, completed: newCompletedState } : g
+        ));
+        await ListItemApiService.updateListItem(matchingGoal.id, {
+          completed: newCompletedState,
+        });
+      }
+
       // Reload lists to reflect any cascading changes (parent/child completion)
       await Promise.all([loadWeeklyGoals(), loadTodoItems()]);
     } catch (error) {
@@ -1528,7 +1721,7 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
     setEventEndTime(endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', ''));
     setEventLocation(event.location || '');
     setEventDescription(event.description || '');
-    setEventGuests(event.attendees?.map(a => a.email).join(', ') || '');
+    setEventGuests('');
 
     // Set date/time objects for pickers
     setEventDateObj(startDate);
@@ -1628,19 +1821,34 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
       <View style={styles.listSection}>
         <View style={styles.listHeaderRow}>
           <Text style={styles.weeklyListTitle}>Weekly goals</Text>
-          {weeklyGoals.length > 0 && (
+          <View style={{ flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between' }}>
             <TouchableOpacity
-              onPress={deleteAllWeeklyGoals}
-              style={styles.deleteAllButton}
+              onPress={openAIWeeklyGoalsModal}
               activeOpacity={0.7}
             >
-              <TrashIconSmall color="#4D5AEE" />
+              <LinearGradient
+                colors={['#4D5AEE', '#8B7FFF']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.aiIconButtonGradient}
+              >
+                <AIIcon size={24} />
+              </LinearGradient>
             </TouchableOpacity>
-          )}
+            {weeklyGoals.length > 0 && (
+              <TouchableOpacity
+                onPress={deleteAllWeeklyGoals}
+                style={[styles.deleteAllButton, { marginTop: 8, marginLeft: 0 }]}
+                activeOpacity={0.7}
+              >
+                <TrashIconSmall color="#4D5AEE" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <View style={styles.listItemsContainer}>
           {weeklyGoals.map((goal) => (
-            <SwipeableListItem key={goal.id} onDelete={() => deleteWeeklyGoal(goal.id)}>
+            <SwipeableListItem key={goal.id} onDelete={() => deleteWeeklyGoal(goal.id)} onAdd={() => addWeeklyGoalToTodo(goal)}>
               <View style={styles.listItem}>
                 <View style={styles.listItemContent}>
                   <TouchableOpacity
@@ -1681,13 +1889,6 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                         <Text style={styles.listItemText}>{goal.text}</Text>
                       </TouchableOpacity>
                   )}
-                  <TouchableOpacity
-                    onPress={() => openSchedulePopup(goal, 'weekly')}
-                    activeOpacity={0.7}
-                    style={styles.calendarIconButton}
-                  >
-                    <CalendarIcon color="#4D5AEE" />
-                  </TouchableOpacity>
                 </View>
               </View>
             </SwipeableListItem>
@@ -1727,15 +1928,30 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
       <View style={styles.listSection}>
         <View style={styles.listHeaderRow}>
           <Text style={styles.todoListTitle}>To do list</Text>
-          {todoItems.length > 0 && (
+          <View style={{ flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between' }}>
             <TouchableOpacity
-              onPress={deleteAllTodoItems}
-              style={styles.deleteAllButton}
+              onPress={() => setShowAITodoModal(true)}
               activeOpacity={0.7}
             >
-              <TrashIconSmall color="#FF9D00" />
+              <LinearGradient
+                colors={['#FF9D00', '#FFB84D']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.aiIconButtonGradient}
+              >
+                <AIIcon size={24} />
+              </LinearGradient>
             </TouchableOpacity>
-          )}
+            {todoItems.length > 0 && (
+              <TouchableOpacity
+                onPress={deleteAllTodoItems}
+                style={[styles.deleteAllButton, { marginTop: 8, marginLeft: 0 }]}
+                activeOpacity={0.7}
+              >
+                <TrashIconSmall color="#FF9D00" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <View style={styles.listItemsContainer}>
           {todoItems.map((item) => (
@@ -1906,21 +2122,23 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
               <Text style={[styles.closeButtonText, { color: popupTheme.buttonTextColor }]}>✕</Text>
             </TouchableOpacity>
 
-            {/* AI Button in top right corner */}
-            <TouchableOpacity style={styles.aiButton} onPress={scheduleEventToCalendar}>
-              <LinearGradient
-                colors={['#FF9D00', '#4D5AEE']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={styles.aiButtonGradient}
-              >
-                <Image
-                  source={require('../../assets/ai.png')}
-                  style={styles.aiIcon}
-                  resizeMode="contain"
-                />
-              </LinearGradient>
-            </TouchableOpacity>
+            {/* AI Button in top right corner - only for weekly goals, not for todo items */}
+            {activeListType === 'weekly' && (
+              <TouchableOpacity style={styles.aiButton} onPress={scheduleEventToCalendar}>
+                <LinearGradient
+                  colors={['#FF9D00', '#4D5AEE']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.aiButtonGradient}
+                >
+                  <Image
+                    source={require('../../assets/ai.png')}
+                    style={styles.aiIcon}
+                    resizeMode="contain"
+                  />
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
 
             <ScrollView style={styles.popupScroll} showsVerticalScrollIndicator={false}>
               <Text style={[styles.popupTitle, { color: popupTheme.accentColor }]}>Schedule event</Text>
@@ -2228,6 +2446,279 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           </View>
         </View>
       </Modal>
+
+      {/* AI Weekly Goals Management Modal */}
+      <Modal
+        visible={showAIWeeklyGoalsModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowAIWeeklyGoalsModal(false);
+          setAIWeeklyScheduleResult(null);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.aiWeeklyGoalsContainer}>
+            {/* Header with close button */}
+            <View style={styles.aiWeeklyGoalsHeader}>
+              <Text style={styles.aiWeeklyGoalsTitle}>Weekly Goals</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAIWeeklyGoalsModal(false);
+                  setAIWeeklyScheduleResult(null);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.closeButtonLarge}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* AI info section */}
+            <View style={styles.aiWeeklyGoalsInfoSection}>
+              <Text style={styles.aiWeeklyGoalsInfo}>
+                 Let AI help you organize and prioritize your weekly goals
+              </Text>
+            </View>
+
+            {/* Goals list or AI Results */}
+            <ScrollView style={styles.aiWeeklyGoalsScroll} showsVerticalScrollIndicator={false}>
+              {aiWeeklyScheduleResult ? (
+                // Show AI schedule results
+                <>
+                  <Text style={styles.sectionSubtitle}>AI-Optimized Weekly Schedule</Text>
+                  {aiWeeklyScheduleResult.scheduledEvents && aiWeeklyScheduleResult.scheduledEvents.length > 0 ? (
+                    aiWeeklyScheduleResult.scheduledEvents.map((event: ScheduledEvent, index: number) => (
+                      <View key={`event-${index}`} style={styles.scheduleItemBox}>
+                        <Text style={styles.scheduleItemTime}>
+                          {event.day} • {event.start_time} - {event.end_time}
+                        </Text>
+                        <Text style={styles.scheduleItemTitle}>{event.title}</Text>
+                        {event.description && (
+                          <Text style={styles.scheduleItemDescription}>{event.description}</Text>
+                        )}
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.noScheduleText}>No scheduled events generated</Text>
+                  )}
+                </>
+              ) : (
+                // Show regular goals list with ranking
+                <>
+                  <Text style={styles.sectionSubtitle}>Your Goals ({weeklyGoals.length})</Text>
+                  <Text style={styles.aiGoalsHint}>Tap checkbox to select • Use arrows to reorder by priority</Text>
+                  {weeklyGoals.length === 0 ? (
+                    <Text style={styles.aiEmptyStateText}>No weekly goals yet. Add one to get started!</Text>
+                  ) : (
+                    aiWeeklyGoalsOrder
+                      .map(id => weeklyGoals.find(g => g.id === id))
+                      .filter((goal): goal is ListItem => goal !== undefined)
+                      .map((goal, index) => {
+                        const isSelected = aiWeeklySelectedGoalIds.has(goal.id);
+                        return (
+                          <View key={goal.id} style={styles.aiGoalItem}>
+                            <Text style={styles.goalRankNumber}>{index + 1}</Text>
+                            <TouchableOpacity
+                              style={styles.aiGoalItemContent}
+                              onPress={() => toggleWeeklyGoalSelection(goal.id)}
+                              activeOpacity={0.7}
+                            >
+                              <View style={[styles.goalCheckbox, isSelected && styles.goalCheckboxScheduled]}>
+                                {isSelected && <Text style={styles.checkmarkText}>✓</Text>}
+                              </View>
+                              <Text style={[styles.aiGoalText, goal.completed && styles.aiGoalTextCompleted]}>
+                                {goal.text}
+                              </Text>
+                            </TouchableOpacity>
+                            <View style={styles.goalReorderButtons}>
+                              <TouchableOpacity
+                                onPress={() => moveGoalUp(goal.id)}
+                                style={[styles.reorderButton, index === 0 && styles.reorderButtonDisabled]}
+                                disabled={index === 0}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={[styles.reorderButtonText, index === 0 && styles.reorderButtonTextDisabled]}>▲</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => moveGoalDown(goal.id)}
+                                style={[styles.reorderButton, index === aiWeeklyGoalsOrder.length - 1 && styles.reorderButtonDisabled]}
+                                disabled={index === aiWeeklyGoalsOrder.length - 1}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={[styles.reorderButtonText, index === aiWeeklyGoalsOrder.length - 1 && styles.reorderButtonTextDisabled]}>▼</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      })
+                  )}
+                </>
+              )}
+            </ScrollView>
+
+            {/* Action buttons */}
+            <View style={styles.aiWeeklyGoalsFooter}>
+              {aiWeeklyScheduleResult ? (
+                <TouchableOpacity
+                  style={styles.aiWeeklyGoalsButton}
+                  onPress={() => {
+                    setAIWeeklyScheduleResult(null);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <LinearGradient
+                    colors={['#4D5AEE', '#8B7FFF']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.aiWeeklyGoalsButtonGradient}
+                  >
+                    <Text style={styles.aiWeeklyGoalsButtonText}>Back to Goals</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.aiWeeklyGoalsButton}
+                  onPress={handleAIWeeklyGoalsSchedule}
+                  disabled={aiWeeklyScheduleLoading || weeklyGoals.length === 0}
+                  activeOpacity={0.7}
+                >
+                  <LinearGradient
+                    colors={aiWeeklyScheduleLoading ? ['#CCCCCC', '#999999'] : ['#4D5AEE', '#8B7FFF']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.aiWeeklyGoalsButtonGradient}
+                  >
+                    {aiWeeklyScheduleLoading ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.aiWeeklyGoalsButtonText}>Organize with AI</Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* AI Todo Organization Modal */}
+      <Modal
+        visible={showAITodoModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowAITodoModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.aiTodoContainer}>
+            {/* Header with close button */}
+            <View style={styles.aiTodoHeader}>
+              <Text style={styles.aiTodoTitle}>Organize To-Do List</Text>
+              <TouchableOpacity
+                onPress={() => setShowAITodoModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.closeButtonLarge}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Date selector */}
+            <View style={styles.aiTodoDateSelector}>
+              <Text style={styles.aiTodoDateLabel}>Schedule for:</Text>
+              <View style={styles.aiTodoDateButtonsRow}>
+                <TouchableOpacity
+                  style={[styles.aiTodoDateButton, aiTodoSelectedDate === 'today' && styles.aiTodoDateButtonSelected]}
+                  onPress={() => setAiTodoSelectedDate('today')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.aiTodoDateButtonText, aiTodoSelectedDate === 'today' && styles.aiTodoDateButtonTextSelected]}>
+                    Today
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.aiTodoDateButton, aiTodoSelectedDate === 'tomorrow' && styles.aiTodoDateButtonSelected]}
+                  onPress={() => setAiTodoSelectedDate('tomorrow')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.aiTodoDateButtonText, aiTodoSelectedDate === 'tomorrow' && styles.aiTodoDateButtonTextSelected]}>
+                    Tomorrow
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* AI info section */}
+            <View style={styles.aiTodoInfoSection}>
+              <Text style={styles.aiTodoInfo}>
+                ✨ Select the items you definitely want to do. AI will help distribute them throughout the selected day.
+              </Text>
+            </View>
+
+            {/* Todos list */}
+            <ScrollView style={styles.aiTodoScroll} showsVerticalScrollIndicator={false}>
+              <Text style={styles.sectionSubtitle}>Your To-Do Items ({todoItems.length})</Text>
+              {todoItems.length === 0 ? (
+                <Text style={styles.aiEmptyStateText}>No to-do items yet. Add one to get started!</Text>
+              ) : (
+                todoItems.map((todo) => {
+                  const isSelected = aiSelectedTodoIds.has(todo.id);
+                  return (
+                    <TouchableOpacity
+                      key={todo.id}
+                      style={styles.aiTodoItem}
+                      onPress={() => {
+                        setAiSelectedTodoIds(prev => {
+                          const newSet = new Set(prev);
+                          if (newSet.has(todo.id)) {
+                            newSet.delete(todo.id);
+                          } else {
+                            newSet.add(todo.id);
+                          }
+                          return newSet;
+                        });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.aiTodoItemContent}>
+                        <View style={[styles.aiTodoCheckbox, isSelected && styles.aiTodoCheckboxSelected]}>
+                          {isSelected && <Text style={styles.aiTodoCheckmarkText}>✓</Text>}
+                        </View>
+                        <Text style={[styles.aiTodoText, todo.completed && styles.aiTodoTextCompleted]}>
+                          {todo.text}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            {/* Action buttons */}
+            <View style={styles.aiTodoFooter}>
+              <TouchableOpacity
+                style={[styles.aiTodoButton, aiSelectedTodoIds.size === 0 && styles.aiTodoButtonDisabled]}
+                onPress={() => {
+                  if (aiSelectedTodoIds.size > 0) {
+                    // Handle AI organization
+                    console.log(`Organizing ${aiSelectedTodoIds.size} todos for ${aiTodoSelectedDate}`);
+                    setShowAITodoModal(false);
+                  }
+                }}
+                activeOpacity={0.7}
+                disabled={aiSelectedTodoIds.size === 0}
+              >
+                <LinearGradient
+                  colors={['#FF9D00', '#FFB84D']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.aiTodoButtonGradient}
+                >
+                  <Text style={styles.aiTodoButtonText}>Organize with AI</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -2277,6 +2768,21 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     marginBottom: 4,
   },
+  aiIconButton: {
+    padding: 8,
+    marginRight: 4,
+    marginBottom: 2,
+  },
+  aiIconButtonGradient: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiButtonText: {
+    fontSize: 24,
+  },
   weeklyListTitle: {
     color: '#4D5AEE',
     textAlign: 'center',
@@ -2315,6 +2821,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 8,
+  },
+  addBackground: {
+    left: 0,
+    right: 'auto',
+    backgroundColor: '#4D5AEE',
+  },
+  addBackgroundText: {
+    color: '#FFFFFF',
+    fontFamily: 'Margarine',
+    fontSize: 12,
+    fontWeight: '400',
+    textAlign: 'center',
+    paddingHorizontal: 8,
   },
   swipeableContent: {
     backgroundColor: '#F7E8FF',
@@ -3060,4 +3579,461 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '400',
   },
+  // AI Weekly Goals Modal Styles
+  aiWeeklyGoalsContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: 40,
+    flexDirection: 'column',
+  },
+  aiWeeklyGoalsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  aiWeeklyGoalsTitle: {
+    fontSize: 28,
+    fontFamily: 'Margarine',
+    fontWeight: '400',
+    color: '#4D5AEE',
+  },
+  closeButtonLarge: {
+    fontSize: 28,
+    color: '#4D5AEE',
+    fontWeight: '300',
+  },
+  aiWeeklyGoalsInfoSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#F0E8FF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  aiWeeklyGoalsInfo: {
+    fontSize: 14,
+    color: '#4D5AEE',
+    fontFamily: 'Margarine',
+    lineHeight: 20,
+  },
+  aiWeeklyGoalsScroll: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  sectionSubtitle: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '400',
+    color: '#666',
+    marginBottom: 12,
+  },
+  aiEmptyStateText: {
+    fontSize: 14,
+    color: '#999',
+    fontFamily: 'Margarine',
+    textAlign: 'center',
+    paddingVertical: 24,
+    fontStyle: 'italic',
+  },
+  aiGoalsHint: {
+    fontSize: 12,
+    color: '#888',
+    fontFamily: 'Margarine',
+    textAlign: 'center',
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  goalRankNumber: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    fontWeight: '600',
+    width: 24,
+    textAlign: 'center',
+    marginRight: 8,
+  },
+  aiGoalItemDragging: {
+    backgroundColor: '#E8E8FF',
+    shadowColor: '#4D5AEE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 999,
+  },
+  dragHandle: {
+    width: 32,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  dragHandleText: {
+    fontSize: 18,
+    color: '#999',
+  },
+  goalReorderButtons: {
+    flexDirection: 'column',
+    gap: 2,
+    marginLeft: 8,
+  },
+  reorderButton: {
+    width: 32,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: '#E8E8FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reorderButtonDisabled: {
+    backgroundColor: '#F5F5F5',
+  },
+  reorderButtonText: {
+    fontSize: 12,
+    color: '#4D5AEE',
+    fontWeight: '600',
+  },
+  reorderButtonTextDisabled: {
+    color: '#CCC',
+  },
+  aiGoalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    backgroundColor: '#F7E8FF',
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4D5AEE',
+  },
+  aiGoalItemContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  goalCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#4D5AEE',
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  goalCheckboxCompleted: {
+    backgroundColor: '#4D5AEE',
+    borderColor: '#4D5AEE',
+  },
+  goalCheckboxScheduled: {
+    backgroundColor: '#4D5AEE',
+    borderColor: '#4D5AEE',
+  },
+  checkmarkText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  aiGoalText: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#000',
+    fontWeight: '400',
+  },
+  aiGoalTextCompleted: {
+    color: '#999',
+    textDecorationLine: 'line-through',
+  },
+  aiGoalActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  aiScheduleButtonText: {
+    fontSize: 12,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    fontWeight: '400',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: '#4D5AEE',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  aiWeeklyGoalsFooter: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  aiWeeklyGoalsButton: {
+    overflow: 'hidden',
+    borderRadius: 12,
+  },
+  aiWeeklyGoalsButtonGradient: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiWeeklyGoalsButtonText: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '400',
+    color: '#FFFFFF',
+  },
+  // Schedule display styles
+  scheduleDayItem: {
+    marginBottom: 16,
+    paddingHorizontal: 12,
+  },
+  scheduleDayTitle: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
+    color: '#4D5AEE',
+    marginBottom: 8,
+  },
+  scheduleItemBox: {
+    backgroundColor: '#F7E8FF',
+    borderLeftWidth: 4,
+    borderLeftColor: '#4D5AEE',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  scheduleItemTime: {
+    fontSize: 12,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+    fontWeight: '400',
+    marginBottom: 4,
+  },
+  scheduleItemTitle: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#000',
+    fontWeight: '400',
+  },
+  scheduleItemDescription: {
+    fontSize: 12,
+    color: '#666',
+    fontFamily: 'Margarine',
+    marginTop: 4,
+  },
+  noScheduleText: {
+    fontSize: 14,
+    color: '#999',
+    fontFamily: 'Margarine',
+    fontStyle: 'italic',
+    marginBottom: 12,
+  },
+  // AI Todo Modal Styles
+  aiTodoContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: 40,
+    flexDirection: 'column',
+  },
+  aiTodoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  aiTodoTitle: {
+    fontSize: 28,
+    fontFamily: 'Margarine',
+    fontWeight: '400',
+    color: '#FF9D00',
+  },
+  aiTodoDateSelector: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#FFF5E8',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  aiTodoDateLabel: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    marginBottom: 8,
+    fontWeight: '400',
+  },
+  aiTodoDateButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  aiTodoDateButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+  },
+  aiTodoDateButtonSelected: {
+    borderColor: '#FF9D00',
+    backgroundColor: '#FF9D00',
+  },
+  aiTodoDateButtonText: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#666',
+    fontWeight: '400',
+  },
+  aiTodoDateButtonTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  aiTodoInfoSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#FFF5E8',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  aiTodoInfo: {
+    fontSize: 14,
+    color: '#FF9D00',
+    fontFamily: 'Margarine',
+    lineHeight: 20,
+  },
+  aiTodoScroll: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  aiTodoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    backgroundColor: '#FFF5E8',
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9D00',
+  },
+  aiTodoItemContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  todoCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#FF9D00',
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  todoCheckboxCompleted: {
+    backgroundColor: '#FF9D00',
+    borderColor: '#FF9D00',
+  },
+  aiTodoCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  aiTodoCheckboxSelected: {
+    backgroundColor: '#FF9D00',
+    borderColor: '#FF9D00',
+  },
+  aiTodoCheckmarkText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  aiTodoText: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#000',
+    fontWeight: '400',
+  },
+  aiTodoTextCompleted: {
+    color: '#999',
+    textDecorationLine: 'line-through',
+  },
+  aiTodoActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  aiTodoSelectButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  aiTodoSelectButtonText: {
+    fontSize: 12,
+    fontFamily: 'Margarine',
+    color: '#FF9D00',
+    fontWeight: '400',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: '#FF9D00',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  aiTodoFooter: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  aiTodoButton: {
+    overflow: 'hidden',
+    borderRadius: 12,
+  },
+  aiTodoButtonDisabled: {
+    opacity: 0.5,
+  },
+  aiTodoButtonGradient: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiTodoButtonText: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '400',
+    color: '#FFFFFF',
+  },
 });
+

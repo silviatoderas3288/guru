@@ -1401,7 +1401,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
                   <View style={styles.aiScheduleButtons}>
                     <TouchableOpacity
                       style={[styles.aiScheduleButton, styles.regenerateButton]}
-                      onPress={handleAISchedule}
+                      onPress={() => handleAISchedule()}
                     >
                       <Text style={styles.regenerateButtonText}>Regenerate</Text>
                     </TouchableOpacity>
@@ -2239,44 +2239,39 @@ warningsContainer: {
     marginBottom: 20,
     fontStyle: 'italic',
   },
-  aiScheduleButtons: {  flexDirection: 'row',
-  gap: 12,
-  marginTop: 14,
-  marginBottom: 10,
-},
-
-aiScheduleButton: {
-  flex: 1,
-  paddingVertical: 12,
-  borderRadius: 18,
-  alignItems: 'center',
-  justifyContent: 'center',
-},
-
-regenerateButton: {
-  backgroundColor: '#FFFFFF',
-  borderWidth: 1,
-  borderColor: 'rgba(77,90,238,0.35)',
-},
-
-regenerateButtonText: {
-  fontSize: 16,
-  fontFamily: 'Margarine',
-  color: '#4D5AEE',
-},
-
-acceptButton: {
-  backgroundColor: '#4D5AEE',
-},
-
-acceptButtonText: {
-  fontSize: 16,
-  fontFamily: 'Margarine',
-  color: '#FFF',
-},
-
-// Workout scheduling specific styles
-scheduleSummary: {
+  aiScheduleButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  aiScheduleButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  regenerateButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(77,90,238,0.35)',
+  },
+  regenerateButtonText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#4D5AEE',
+  },
+  acceptButton: {
+    backgroundColor: '#4D5AEE',
+  },
+  acceptButtonText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#FFF',
+  },
+  // Workout scheduling specific styles
+  scheduleSummary: {
   backgroundColor: 'rgba(77, 90, 238, 0.1)',
   borderRadius: 12,
   padding: 12,
