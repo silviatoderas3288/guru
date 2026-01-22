@@ -2530,8 +2530,19 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                               onPress={() => toggleWeeklyGoalSelection(goal.id)}
                               activeOpacity={0.7}
                             >
-                              <View style={[styles.goalCheckbox, isSelected && styles.goalCheckboxScheduled]}>
-                                {isSelected && <Text style={styles.checkmarkText}>✓</Text>}
+                              <View>
+                                <Image
+                                  source={require('../../assets/to_do.png')}
+                                  style={styles.checkbox}
+                                  resizeMode="contain"
+                                />
+                                {isSelected && (
+                                  <Image
+                                    source={require('../../assets/check.png')}
+                                    style={styles.checkmark}
+                                    resizeMode="contain"
+                                  />
+                                )}
                               </View>
                               <Text style={[styles.aiGoalText, goal.completed && styles.aiGoalTextCompleted]}>
                                 {goal.text}
@@ -2544,7 +2555,11 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                                 disabled={index === 0}
                                 activeOpacity={0.7}
                               >
-                                <Text style={[styles.reorderButtonText, index === 0 && styles.reorderButtonTextDisabled]}>▲</Text>
+                                <Image 
+                                  source={require('../../assets/arrow.png')} 
+                                  style={{ width: 12, height: 12, transform: [{ rotate: '180deg' }] }} 
+                                  resizeMode="contain"
+                                />
                               </TouchableOpacity>
                               <TouchableOpacity
                                 onPress={() => moveGoalDown(goal.id)}
@@ -2552,7 +2567,11 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                                 disabled={index === aiWeeklyGoalsOrder.length - 1}
                                 activeOpacity={0.7}
                               >
-                                <Text style={[styles.reorderButtonText, index === aiWeeklyGoalsOrder.length - 1 && styles.reorderButtonTextDisabled]}>▼</Text>
+                                <Image 
+                                  source={require('../../assets/arrow.png')} 
+                                  style={{ width: 12, height: 12, transform: [{ rotate: '0deg' }] }} 
+                                  resizeMode="contain"
+                                />
                               </TouchableOpacity>
                             </View>
                           </View>
@@ -2598,7 +2617,7 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                     {aiWeeklyScheduleLoading ? (
                       <ActivityIndicator color="#FFFFFF" />
                     ) : (
-                      <Text style={styles.aiWeeklyGoalsButtonText}>Organize with AI</Text>
+                      <Text style={styles.aiWeeklyGoalsButtonText}>Smart Schedule</Text>
                     )}
                   </LinearGradient>
                 </TouchableOpacity>
@@ -2656,7 +2675,7 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
             {/* AI info section */}
             <View style={styles.aiTodoInfoSection}>
               <Text style={styles.aiTodoInfo}>
-                ✨ Select the items you definitely want to do. AI will help distribute them throughout the selected day.
+                Select the items you definitely want to do. The scheduler will help distribute them throughout the selected day.
               </Text>
             </View>
 
@@ -2686,8 +2705,19 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                       activeOpacity={0.7}
                     >
                       <View style={styles.aiTodoItemContent}>
-                        <View style={[styles.aiTodoCheckbox, isSelected && styles.aiTodoCheckboxSelected]}>
-                          {isSelected && <Text style={styles.aiTodoCheckmarkText}>✓</Text>}
+                        <View>
+                          <Image
+                            source={require('../../assets/to_do.png')}
+                            style={styles.checkbox}
+                            resizeMode="contain"
+                          />
+                          {isSelected && (
+                            <Image
+                              source={require('../../assets/check.png')}
+                              style={styles.checkmark}
+                              resizeMode="contain"
+                            />
+                          )}
                         </View>
                         <Text style={[styles.aiTodoText, todo.completed && styles.aiTodoTextCompleted]}>
                           {todo.text}
@@ -2719,7 +2749,7 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                   end={{ x: 1, y: 1 }}
                   style={styles.aiTodoButtonGradient}
                 >
-                  <Text style={styles.aiTodoButtonText}>Organize with AI</Text>
+                  <Text style={styles.aiTodoButtonText}>Smart Schedule</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
@@ -3589,61 +3619,63 @@ const styles = StyleSheet.create({
   // AI Weekly Goals Modal Styles
   aiWeeklyGoalsContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(77, 90, 238, 0.70)',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     marginTop: 40,
     flexDirection: 'column',
+    borderRadius: 25,
+    padding: 20,
   },
   aiWeeklyGoalsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingHorizontal: 0,
+    paddingTop: 0,
     paddingBottom: 12,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
     borderBottomColor: '#E0E0E0',
   },
   aiWeeklyGoalsTitle: {
     fontSize: 28,
     fontFamily: 'Margarine',
     fontWeight: '400',
-    color: '#4D5AEE',
+    color: '#FF9D00',
   },
   closeButtonLarge: {
     fontSize: 28,
-    color: '#4D5AEE',
+    color: '#FFF',
     fontWeight: '300',
   },
   aiWeeklyGoalsInfoSection: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 0,
     paddingVertical: 12,
-    backgroundColor: '#F0E8FF',
-    borderBottomWidth: 1,
+    backgroundColor: 'transparent',
+    borderBottomWidth: 0,
     borderBottomColor: '#E0E0E0',
   },
   aiWeeklyGoalsInfo: {
     fontSize: 14,
-    color: '#4D5AEE',
+    color: '#FFF',
     fontFamily: 'Margarine',
     lineHeight: 20,
   },
   aiWeeklyGoalsScroll: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 0,
     paddingTop: 16,
   },
   sectionSubtitle: {
     fontSize: 16,
     fontFamily: 'Margarine',
     fontWeight: '400',
-    color: '#666',
+    color: '#4D5AEE',
     marginBottom: 12,
   },
   aiEmptyStateText: {
     fontSize: 14,
-    color: '#999',
+    color: '#FFF',
     fontFamily: 'Margarine',
     textAlign: 'center',
     paddingVertical: 24,
@@ -3651,7 +3683,7 @@ const styles = StyleSheet.create({
   },
   aiGoalsHint: {
     fontSize: 12,
-    color: '#888',
+    color: '#FFF',
     fontFamily: 'Margarine',
     textAlign: 'center',
     marginBottom: 12,
@@ -3660,7 +3692,7 @@ const styles = StyleSheet.create({
   goalRankNumber: {
     fontSize: 16,
     fontFamily: 'Margarine',
-    color: '#4D5AEE',
+    color: '#FF9D00',
     fontWeight: '600',
     width: 24,
     textAlign: 'center',
@@ -3851,39 +3883,41 @@ const styles = StyleSheet.create({
   // AI Todo Modal Styles
   aiTodoContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 157, 0, 0.70)',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     marginTop: 40,
     flexDirection: 'column',
+    borderRadius: 25,
+    padding: 20,
   },
   aiTodoHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingHorizontal: 0,
+    paddingTop: 0,
     paddingBottom: 12,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
     borderBottomColor: '#E0E0E0',
   },
   aiTodoTitle: {
     fontSize: 28,
     fontFamily: 'Margarine',
     fontWeight: '400',
-    color: '#FF9D00',
+    color: '#4D5AEE',
   },
   aiTodoDateSelector: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 0,
     paddingVertical: 12,
-    backgroundColor: '#FFF5E8',
-    borderBottomWidth: 1,
+    backgroundColor: 'transparent',
+    borderBottomWidth: 0,
     borderBottomColor: '#E0E0E0',
   },
   aiTodoDateLabel: {
     fontSize: 14,
     fontFamily: 'Margarine',
-    color: '#FF9D00',
+    color: '#4D5AEE',
     marginBottom: 8,
     fontWeight: '400',
   },
@@ -3897,18 +3931,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#4D5AEE',
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
   },
   aiTodoDateButtonSelected: {
-    borderColor: '#FF9D00',
-    backgroundColor: '#FF9D00',
+    borderColor: '#4D5AEE',
+    backgroundColor: '#4D5AEE',
   },
   aiTodoDateButtonText: {
     fontSize: 14,
     fontFamily: 'Margarine',
-    color: '#666',
+    color: '#4D5AEE',
     fontWeight: '400',
   },
   aiTodoDateButtonTextSelected: {
@@ -3916,21 +3950,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   aiTodoInfoSection: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 0,
     paddingVertical: 12,
-    backgroundColor: '#FFF5E8',
-    borderBottomWidth: 1,
+    backgroundColor: 'transparent',
+    borderBottomWidth: 0,
     borderBottomColor: '#E0E0E0',
   },
   aiTodoInfo: {
     fontSize: 14,
-    color: '#FF9D00',
+    color: '#FFF',
     fontFamily: 'Margarine',
     lineHeight: 20,
   },
   aiTodoScroll: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 0,
     paddingTop: 16,
   },
   aiTodoItem: {
@@ -3942,8 +3976,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: '#FFF5E8',
     borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FF9D00',
   },
   aiTodoItemContent: {
     flex: 1,

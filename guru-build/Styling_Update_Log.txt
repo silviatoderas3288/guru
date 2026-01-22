@@ -1,0 +1,4 @@
+Stylized the AI popups in Page Two to use transparent blue and orange backgrounds.
+Updated "Organize with AI" text to "Smart Schedule".
+Replaced standard checkboxes with `to_do.png` and `check.png`.
+Replaced text arrows with `arrow.png` (rotated).

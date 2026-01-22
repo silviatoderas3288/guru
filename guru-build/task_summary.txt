@@ -1,0 +1,7 @@
+Task Completed:
+1. Updated PageTwo.tsx:
+   - Styled aiWeeklyGoalsContainer with transparent blue background (rgba(77, 90, 238, 0.70)) and borderRadius 25.
+   - Styled aiTodoContainer with transparent orange background (rgba(255, 157, 0, 0.70)) and borderRadius 25.
+   - Replaced "Organize with AI" text with "Smart Schedule" in both modals.
+   - Replaced default checkboxes with to_do.png and check.png images.
+   - Replaced text arrows with arrow.png (rotated) in Weekly Goals modal.
