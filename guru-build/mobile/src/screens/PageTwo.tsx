@@ -291,6 +291,9 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
   const [showAITodoModal, setShowAITodoModal] = useState(false);
   const [aiTodoSelectedDate, setAiTodoSelectedDate] = useState<'today' | 'tomorrow'>('today');
   const [aiSelectedTodoIds, setAiSelectedTodoIds] = useState<Set<string>>(new Set());
+  
+  // AI Selection Modal State
+  const [showAISelectionModal, setShowAISelectionModal] = useState(false);
 
   // Check authentication on mount
   useEffect(() => {
@@ -1803,8 +1806,23 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Header with Settings Button */}
+      {/* Header with AI Button (Left) and Settings Button (Right) */}
       <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.settingsButtonWrapper} 
+          onPress={() => setShowAISelectionModal(true)}
+          activeOpacity={0.7}
+        >
+          <LinearGradient
+            colors={['#FF9D00', '#4D5AEE']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.settingsButton}
+          >
+            <AIIcon size={24} />
+          </LinearGradient>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
           <LinearGradient
             colors={['#FF9D00', '#4D5AEE']}
@@ -1822,19 +1840,6 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
         <View style={styles.listHeaderRow}>
           <Text style={styles.weeklyListTitle}>Weekly goals</Text>
           <View style={{ flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <TouchableOpacity
-              onPress={openAIWeeklyGoalsModal}
-              activeOpacity={0.7}
-            >
-              <LinearGradient
-                colors={['#4D5AEE', '#8B7FFF']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.aiIconButtonGradient}
-              >
-                <AIIcon size={24} />
-              </LinearGradient>
-            </TouchableOpacity>
             {weeklyGoals.length > 0 && (
               <TouchableOpacity
                 onPress={deleteAllWeeklyGoals}
@@ -1936,19 +1941,6 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
         <View style={styles.listHeaderRow}>
           <Text style={styles.todoListTitle}>To do list</Text>
           <View style={{ flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <TouchableOpacity
-              onPress={() => setShowAITodoModal(true)}
-              activeOpacity={0.7}
-            >
-              <LinearGradient
-                colors={['#FF9D00', '#FFB84D']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.aiIconButtonGradient}
-              >
-                <AIIcon size={24} />
-              </LinearGradient>
-            </TouchableOpacity>
             {todoItems.length > 0 && (
               <TouchableOpacity
                 onPress={deleteAllTodoItems}
@@ -2756,6 +2748,63 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           </View>
         </View>
       </Modal>
+
+      {/* AI Selection Modal */}
+      <Modal
+        visible={showAISelectionModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowAISelectionModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.aiSelectionContainer}>
+            <Text style={styles.aiSelectionTitle}>What would you like to schedule?</Text>
+            
+            <TouchableOpacity 
+              style={styles.aiSelectionButton}
+              onPress={() => {
+                setShowAISelectionModal(false);
+                setTimeout(() => openAIWeeklyGoalsModal(), 300);
+              }}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={['#4D5AEE', '#8B7FFF']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.aiSelectionButtonGradient}
+              >
+                <Text style={styles.aiSelectionButtonText}>Weekly Goals</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.aiSelectionButton}
+              onPress={() => {
+                setShowAISelectionModal(false);
+                setTimeout(() => setShowAITodoModal(true), 300);
+              }}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={['#FF9D00', '#FFB84D']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.aiSelectionButtonGradient}
+              >
+                <Text style={styles.aiSelectionButtonText}>To-Do List</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.aiSelectionCloseButton}
+              onPress={() => setShowAISelectionModal(false)}
+            >
+              <Text style={styles.aiSelectionCloseText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -2772,7 +2821,9 @@ const styles = StyleSheet.create({
   },
   header: {
     width: '100%',
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingTop: 20,
     marginBottom: 20,
   },
@@ -4073,6 +4124,53 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     fontWeight: '400',
     color: '#FFFFFF',
+  },
+  // AI Selection Modal Styles
+  aiSelectionContainer: {
+    width: '90%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 25,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  aiSelectionTitle: {
+    fontSize: 24,
+    fontFamily: 'Margarine',
+    fontWeight: '400',
+    color: '#4D5AEE',
+    marginBottom: 30,
+    textAlign: 'center',
+  },
+  aiSelectionButton: {
+    width: '100%',
+    marginBottom: 16,
+    borderRadius: 15,
+    overflow: 'hidden',
+  },
+  aiSelectionButtonGradient: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiSelectionButtonText: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '400',
+    color: '#FFFFFF',
+  },
+  aiSelectionCloseButton: {
+    marginTop: 10,
+    padding: 10,
+  },
+  aiSelectionCloseText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    color: '#999',
   },
 });
 
