@@ -1852,59 +1852,61 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           </View>
         </View>
         <View style={styles.listItemsContainer}>
-          {weeklyGoals.map((goal) => (
-            <SwipeableListItem key={goal.id} onDelete={() => deleteWeeklyGoal(goal.id)} onAdd={() => addWeeklyGoalToTodo(goal)}>
-              <View style={styles.listItem}>
-                <View style={styles.listItemContent}>
-                  <TouchableOpacity
-                    onPress={() => toggleWeeklyGoal(goal.id)}
-                    activeOpacity={0.7}
-                    disabled={editingWeeklyGoalId === goal.id}
-                  >
-                    <View>
-                        <Image
-                            source={require('../../assets/to_do.png')}
-                            style={styles.checkbox}
-                            resizeMode="contain"
+          <ScrollView style={{ maxHeight: 420 }} nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+            {weeklyGoals.map((goal) => (
+              <SwipeableListItem key={goal.id} onDelete={() => deleteWeeklyGoal(goal.id)} onAdd={() => addWeeklyGoalToTodo(goal)}>
+                <View style={styles.listItem}>
+                  <View style={styles.listItemContent}>
+                    <TouchableOpacity
+                      onPress={() => toggleWeeklyGoal(goal.id)}
+                      activeOpacity={0.7}
+                      disabled={editingWeeklyGoalId === goal.id}
+                    >
+                      <View>
+                          <Image
+                              source={require('../../assets/to_do.png')}
+                              style={styles.checkbox}
+                              resizeMode="contain"
+                          />
+                          {goal.completed && (
+                              <Image
+                              source={require('../../assets/check.png')}
+                              style={styles.checkmark}
+                              resizeMode="contain"
+                              />
+                          )}
+                      </View>
+                    </TouchableOpacity>
+                    {editingWeeklyGoalId === goal.id ? (
+                        <TextInput
+                            style={styles.editInput}
+                            value={editingWeeklyGoalText}
+                            onChangeText={setEditingWeeklyGoalText}
+                            autoFocus
+                            onSubmitEditing={saveWeeklyGoal}
+                            onBlur={saveWeeklyGoal}
                         />
-                        {goal.completed && (
-                            <Image
-                            source={require('../../assets/check.png')}
-                            style={styles.checkmark}
-                            resizeMode="contain"
-                            />
-                        )}
-                    </View>
-                  </TouchableOpacity>
-                  {editingWeeklyGoalId === goal.id ? (
-                      <TextInput
-                          style={styles.editInput}
-                          value={editingWeeklyGoalText}
-                          onChangeText={setEditingWeeklyGoalText}
-                          autoFocus
-                          onSubmitEditing={saveWeeklyGoal}
-                          onBlur={saveWeeklyGoal}
-                      />
-                  ) : (
-                      <TouchableOpacity
-                        style={{ flex: 1 }}
-                        onPress={() => startEditingWeeklyGoal(goal)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.listItemText}>{goal.text}</Text>
-                      </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    onPress={() => openSchedulePopup(goal, 'weekly')}
-                    activeOpacity={0.7}
-                    style={styles.calendarIconButton}
-                  >
-                    <CalendarIcon color="#4D5AEE" />
-                  </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity
+                          style={{ flex: 1 }}
+                          onPress={() => startEditingWeeklyGoal(goal)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.listItemText}>{goal.text}</Text>
+                        </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => openSchedulePopup(goal, 'weekly')}
+                      activeOpacity={0.7}
+                      style={styles.calendarIconButton}
+                    >
+                      <CalendarIcon color="#4D5AEE" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            </SwipeableListItem>
-          ))}
+              </SwipeableListItem>
+            ))}
+          </ScrollView>
 
           {isAddingWeeklyGoal ? (
             <View style={styles.inputRow}>
@@ -1953,59 +1955,61 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
           </View>
         </View>
         <View style={styles.listItemsContainer}>
-          {todoItems.map((item) => (
-            <SwipeableListItem key={item.id} onDelete={() => deleteTodoItem(item.id)}>
-              <View style={styles.listItem}>
-                <View style={styles.listItemContent}>
-                  <TouchableOpacity
-                    onPress={() => toggleTodoItem(item.id)}
-                    activeOpacity={0.7}
-                    disabled={editingTodoItemId === item.id}
-                  >
-                    <View>
-                      <Image
-                        source={require('../../assets/to_do.png')}
-                        style={styles.checkbox}
-                        resizeMode="contain"
-                      />
-                      {item.completed && (
+          <ScrollView style={{ maxHeight: 420 }} nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+            {todoItems.map((item) => (
+              <SwipeableListItem key={item.id} onDelete={() => deleteTodoItem(item.id)}>
+                <View style={styles.listItem}>
+                  <View style={styles.listItemContent}>
+                    <TouchableOpacity
+                      onPress={() => toggleTodoItem(item.id)}
+                      activeOpacity={0.7}
+                      disabled={editingTodoItemId === item.id}
+                    >
+                      <View>
                         <Image
-                          source={require('../../assets/check.png')}
-                          style={styles.checkmark}
+                          source={require('../../assets/to_do.png')}
+                          style={styles.checkbox}
                           resizeMode="contain"
                         />
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                  {editingTodoItemId === item.id ? (
-                    <TextInput
-                      style={styles.editInput}
-                      value={editingTodoItemText}
-                      onChangeText={setEditingTodoItemText}
-                      autoFocus
-                      onSubmitEditing={saveTodoItem}
-                      onBlur={saveTodoItem}
-                    />
-                  ) : (
-                    <TouchableOpacity
-                      style={{ flex: 1 }}
-                      onPress={() => startEditingTodoItem(item)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.listItemText}>{item.text}</Text>
+                        {item.completed && (
+                          <Image
+                            source={require('../../assets/check.png')}
+                            style={styles.checkmark}
+                            resizeMode="contain"
+                          />
+                        )}
+                      </View>
                     </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    onPress={() => openSchedulePopup(item, 'todo')}
-                    activeOpacity={0.7}
-                    style={styles.calendarIconButton}
-                  >
-                    <CalendarIcon color="#FF9D00" />
-                  </TouchableOpacity>
+                    {editingTodoItemId === item.id ? (
+                      <TextInput
+                        style={styles.editInput}
+                        value={editingTodoItemText}
+                        onChangeText={setEditingTodoItemText}
+                        autoFocus
+                        onSubmitEditing={saveTodoItem}
+                        onBlur={saveTodoItem}
+                      />
+                    ) : (
+                      <TouchableOpacity
+                        style={{ flex: 1 }}
+                        onPress={() => startEditingTodoItem(item)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.listItemText}>{item.text}</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => openSchedulePopup(item, 'todo')}
+                      activeOpacity={0.7}
+                      style={styles.calendarIconButton}
+                    >
+                      <CalendarIcon color="#FF9D00" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            </SwipeableListItem>
-          ))}
+              </SwipeableListItem>
+            ))}
+          </ScrollView>
 
           {isAddingTodoItem ? (
             <View style={styles.inputRow}>
@@ -2758,6 +2762,13 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
       >
         <View style={styles.modalOverlay}>
           <View style={styles.aiSelectionContainer}>
+            <TouchableOpacity 
+              style={styles.aiSelectionCloseButtonAbsolute}
+              onPress={() => setShowAISelectionModal(false)}
+            >
+              <Text style={styles.aiSelectionCloseTextLarge}>✕</Text>
+            </TouchableOpacity>
+
             <Text style={styles.aiSelectionTitle}>What would you like to schedule?</Text>
             
             <TouchableOpacity 
@@ -2794,13 +2805,6 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
               >
                 <Text style={styles.aiSelectionButtonText}>To-Do List</Text>
               </LinearGradient>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.aiSelectionCloseButton}
-              onPress={() => setShowAISelectionModal(false)}
-            >
-              <Text style={styles.aiSelectionCloseText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -4137,6 +4141,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 10,
+    position: 'relative',
   },
   aiSelectionTitle: {
     fontSize: 24,
@@ -4144,6 +4149,7 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#4D5AEE',
     marginBottom: 30,
+    marginTop: 20,
     textAlign: 'center',
   },
   aiSelectionButton: {
@@ -4163,14 +4169,17 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#FFFFFF',
   },
-  aiSelectionCloseButton: {
-    marginTop: 10,
+  aiSelectionCloseButtonAbsolute: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
     padding: 10,
+    zIndex: 10,
   },
-  aiSelectionCloseText: {
-    fontSize: 16,
-    fontFamily: 'Margarine',
+  aiSelectionCloseTextLarge: {
+    fontSize: 24,
     color: '#999',
+    fontWeight: '300',
   },
 });
 
