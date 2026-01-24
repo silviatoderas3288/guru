@@ -4,6 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
+from pydantic import BaseModel
+from openai import OpenAI
+import os
+import re
 from ..database import get_db
 from ..schemas.workout import (
     Workout, WorkoutCreate, WorkoutUpdate,
@@ -16,6 +20,49 @@ from ..services.auth_service import get_current_user
 
 router = APIRouter()
 
+class CalorieEstimateRequest(BaseModel):
+    title: str
+    duration: str
+
+class CalorieEstimateResponse(BaseModel):
+    calories: int
+
+@router.post("/estimate-calories", response_model=CalorieEstimateResponse)
+def estimate_calories(
+    request: CalorieEstimateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Estimate calories for a workout using AI."""
+    try:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return {"calories": 0}
+
+        client = OpenAI(api_key=api_key)
+        
+        prompt = f"Estimate the average calories burned for a workout titled '{request.title}' performed for '{request.duration}'. Return ONLY the integer number of calories. Do not output any text."
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a fitness expert. Return only the estimated number of calories burned as an integer. Example: 300"},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=10
+        )
+        
+        content = response.choices[0].message.content.strip()
+        numbers = re.findall(r'\d+', content)
+        if numbers:
+            calories = int(numbers[0])
+        else:
+            calories = 0
+            
+        return {"calories": calories}
+    except Exception as e:
+        print(f"Error estimating calories: {e}")
+        return {"calories": 0}
 
 # Workout endpoints
 @router.get("/", response_model=List[Workout])

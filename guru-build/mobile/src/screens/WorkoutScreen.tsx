@@ -135,6 +135,14 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showDatePickerModal, setShowDatePickerModal] = useState(false);
 
+  // Duration prompt modal states
+  const [showDurationModal, setShowDurationModal] = useState(false);
+  const [durationInput, setDurationInput] = useState('');
+  const [pendingWorkout, setPendingWorkout] = useState<Workout | null>(null);
+
+  // Stats tracking - store per-workout stats so we can subtract when unchecking
+  const [workoutStats, setWorkoutStats] = useState<Record<string, { duration: number; calories: number }>>({});
+
   // Edit/Delete mode states
   const [editMode, setEditMode] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
@@ -195,37 +203,155 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
     );
   };
 
+  // Helper to get total duration from workout exercises
+  const getWorkoutDuration = (workout: Workout): number | null => {
+    let totalMinutes = 0;
+    let hasDuration = false;
+
+    for (const section of workout.sections) {
+      for (const exercise of section.exercises) {
+        if (exercise.duration) {
+          hasDuration = true;
+          // Parse duration string (e.g., "30 min", "1 hour", "45 minutes")
+          const durationStr = exercise.duration.toLowerCase();
+          const hourMatch = durationStr.match(/(\d+)\s*h/);
+          const minMatch = durationStr.match(/(\d+)\s*m/);
+
+          if (hourMatch) {
+            totalMinutes += parseInt(hourMatch[1]) * 60;
+          }
+          if (minMatch) {
+            totalMinutes += parseInt(minMatch[1]);
+          }
+          // If just a number, assume minutes
+          if (!hourMatch && !minMatch) {
+            const numMatch = durationStr.match(/(\d+)/);
+            if (numMatch) {
+              totalMinutes += parseInt(numMatch[1]);
+            }
+          }
+        }
+      }
+    }
+
+    return hasDuration ? totalMinutes : null;
+  };
+
   const toggleWorkoutCompletion = async (workout: Workout) => {
     if (!workout.id) return;
 
     const newCompletedStatus = !workout.completed;
 
+    // If marking as complete, check if we have duration info
+    if (newCompletedStatus) {
+      const duration = getWorkoutDuration(workout);
+
+      if (duration === null) {
+        // No duration found, prompt user
+        setPendingWorkout(workout);
+        setDurationInput('');
+        setShowDurationModal(true);
+        return;
+      }
+
+      // We have duration, proceed with completion
+      await completeWorkoutWithDuration(workout, duration);
+    } else {
+      // Unchecking - remove stats for this workout
+      await uncheckWorkout(workout);
+    }
+  };
+
+  const completeWorkoutWithDuration = async (workout: Workout, durationMinutes: number) => {
     // Optimistically update UI
     setWorkouts(prev =>
       prev.map(w =>
         w.id === workout.id
-          ? { ...w, completed: newCompletedStatus }
+          ? { ...w, completed: true }
           : w
       )
     );
 
     try {
-      await WorkoutApiService.updateWorkout(workout.id, {
-        completed: newCompletedStatus,
+      // Call API to estimate calories
+      const calories = await WorkoutApiService.estimateCalories(
+        workout.title,
+        `${durationMinutes} minutes`
+      );
+
+      // Store stats for this workout so we can subtract later if unchecked
+      setWorkoutStats(prev => ({
+        ...prev,
+        [workout.id!]: { duration: durationMinutes, calories }
+      }));
+
+      // Update workout status in backend
+      await WorkoutApiService.updateWorkout(workout.id!, {
+        completed: true,
       });
 
       // If this workout has a corresponding weekly goal, update it
       const weeklyGoalId = weeklyGoalIds[workout.title];
       if (weeklyGoalId) {
         await ListItemApiService.updateListItem(weeklyGoalId, {
-          completed: newCompletedStatus,
+          completed: true,
         });
+      }
+    } catch (error) {
+      console.error('Error completing workout:', error);
+      Alert.alert('Error', 'Failed to complete workout');
+      loadWorkouts(); // Revert changes
+    }
+  };
+
+  const uncheckWorkout = async (workout: Workout) => {
+    // Optimistically update UI
+    setWorkouts(prev =>
+      prev.map(w =>
+        w.id === workout.id
+          ? { ...w, completed: false }
+          : w
+      )
+    );
+
+    // Remove stats for this workout
+    setWorkoutStats(prev => {
+      const newStats = { ...prev };
+      delete newStats[workout.id!];
+      return newStats;
+    });
+
+    try {
+      await WorkoutApiService.updateWorkout(workout.id!, { completed: false });
+
+      // If this workout has a corresponding weekly goal, update it
+      const weeklyGoalId = weeklyGoalIds[workout.title];
+      if (weeklyGoalId) {
+        await ListItemApiService.updateListItem(weeklyGoalId, { completed: false });
       }
     } catch (error) {
       console.error('Error updating workout status:', error);
       Alert.alert('Error', 'Failed to update workout status');
       loadWorkouts(); // Revert changes
     }
+  };
+
+  const handleDurationSubmit = async () => {
+    if (!pendingWorkout || !durationInput.trim()) {
+      Alert.alert('Error', 'Please enter how long the workout took');
+      return;
+    }
+
+    const minutes = parseInt(durationInput);
+    if (isNaN(minutes) || minutes <= 0) {
+      Alert.alert('Error', 'Please enter a valid number of minutes');
+      return;
+    }
+
+    setShowDurationModal(false);
+    await completeWorkoutWithDuration(pendingWorkout, minutes);
+    setPendingWorkout(null);
+    setDurationInput('');
   };
 
   const handleSchedule = () => {
@@ -639,11 +765,11 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
     );
   };
 
-  // Calculate stats
+  // Calculate stats from workoutStats
   const completedCount = workouts.filter(w => w.completed).length;
   const totalCount = workouts.length;
-  const totalActiveTime = 50; // This would be calculated based on completed workouts
-  const totalCalories = 400; // This would be calculated based on completed workouts
+  const totalActiveTime = Object.values(workoutStats).reduce((sum, s) => sum + s.duration, 0);
+  const totalCalories = Object.values(workoutStats).reduce((sum, s) => sum + s.calories, 0);
 
   if (loading) {
     return (
@@ -1427,6 +1553,61 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({ onNavigateToCalend
         </View>
       </Modal>
 
+      {/* Duration Prompt Modal */}
+      <Modal
+        visible={showDurationModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowDurationModal(false);
+          setPendingWorkout(null);
+        }}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => {
+            setShowDurationModal(false);
+            setPendingWorkout(null);
+          }}
+        >
+          <Pressable style={styles.formModalContent}>
+            <Text style={styles.formModalTitle}>How long did it take?</Text>
+            <Text style={styles.durationModalSubtitle}>
+              Enter the duration for "{pendingWorkout?.title}"
+            </Text>
+            <View style={styles.durationInputRow}>
+              <TextInput
+                style={[styles.input, styles.durationInput]}
+                placeholder="30"
+                placeholderTextColor="#999"
+                value={durationInput}
+                onChangeText={setDurationInput}
+                keyboardType="numeric"
+                autoFocus
+              />
+              <Text style={styles.durationLabel}>minutes</Text>
+            </View>
+            <View style={styles.formButtons}>
+              <TouchableOpacity
+                style={[styles.formButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowDurationModal(false);
+                  setPendingWorkout(null);
+                  setDurationInput('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.formButton, styles.saveButton]}
+                onPress={handleDurationSubmit}
+              >
+                <Text style={styles.saveButtonText}>Complete</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
     </>
   );
@@ -1500,7 +1681,7 @@ const styles = StyleSheet.create({
   statsTitle: {
     fontSize: 20,
     fontFamily: 'Margarine',
-    color: '#000',
+    color: '#4D5AEE',
     textAlign: 'center',
     marginBottom: 12,
   },
@@ -2354,6 +2535,33 @@ reasoningText: {
   fontFamily: 'Margarine',
   color: '#333',
   lineHeight: 18,
+},
+
+// Duration modal styles
+durationModalSubtitle: {
+  fontSize: 14,
+  fontFamily: 'Margarine',
+  color: '#666',
+  textAlign: 'center',
+  marginBottom: 20,
+},
+durationInputRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginBottom: 20,
+  gap: 12,
+},
+durationInput: {
+  width: 100,
+  textAlign: 'center',
+  fontSize: 24,
+  marginBottom: 0,
+},
+durationLabel: {
+  fontSize: 18,
+  fontFamily: 'Margarine',
+  color: '#4D5AEE',
 },
 
 });

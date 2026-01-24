@@ -13,7 +13,9 @@ import {
   ActivityIndicator,
   TextInput,
   Linking,
+  Platform
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -22,7 +24,7 @@ import { usePreferencesStore } from '../store/usePreferencesStore';
 import schedulingAgentApi, { PodcastScheduleResponse, ScheduledPodcastEpisode } from '../services/schedulingAgentApi';
 import { CalendarApiService } from '../services/calendarApi';
 import { ListItemApiService, ListItemType } from '../services/listItemApi';
-
+import { Ionicons } from '@expo/vector-icons';
 const SettingsIcon = () => (
   <Svg width="19" height="20" viewBox="0 0 19 20" fill="none">
     <Path
@@ -112,6 +114,8 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   const [selectedPodcast, setSelectedPodcast] = useState<Podcast | null>(null);
   const [loading, setLoading] = useState(true);
   const { toggleSettingsModal } = usePreferencesStore();
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
 
   // AI Scheduling states
   const [showEpisodeSelectionModal, setShowEpisodeSelectionModal] = useState(false);
@@ -137,6 +141,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   const [currentFavorites, setCurrentFavorites] = useState<Podcast[]>([]);
   const [recentEpisodes, setRecentEpisodes] = useState<Episode[]>([]);
   const [recommendations, setRecommendations] = useState<Podcast[]>([]);
+  const [allTrending, setAllTrending] = useState<Podcast[]>([]);
   const [savedPodcasts, setSavedPodcasts] = useState<Podcast[]>([]);
 
   // Search state
@@ -144,6 +149,10 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   const [searchResults, setSearchResults] = useState<Podcast[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isFromRecentEpisodes, setIsFromRecentEpisodes] = useState(false);
+
+  // Interest tracking state (podcasts user doesn't want to see)
+  const [dislikedPodcastIds, setDislikedPodcastIds] = useState<Set<string>>(new Set());
+  const [likedPodcastIds, setLikedPodcastIds] = useState<Set<string>>(new Set());
 
   // Library API base URL
   const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
@@ -233,8 +242,8 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       setRecentEpisodes(formattedEpisodes);
 
       // Load recommendations (trending podcasts)
-      const trending = await PodcastApiService.getTrendingPodcasts(10);
-      const formattedRecommendations = trending.slice(0, 5).map((podcast: ApiPodcast) => ({
+      const trending = await PodcastApiService.getTrendingPodcasts(20);
+      const formattedAllTrending = trending.map((podcast: ApiPodcast) => ({
         id: podcast.id,
         title: podcast.name,
         artist: podcast.author,
@@ -243,6 +252,15 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
         url: podcast.url,
         website: podcast.website,
       }));
+      setAllTrending(formattedAllTrending);
+      
+      const formattedRecommendations = formattedAllTrending.slice(0, 5);
+      
+      console.log('--- Recommended Podcasts ---');
+      formattedRecommendations.forEach(p => {
+        console.log(`Title: ${p.title}, Artwork: ${p.artwork}`);
+      });
+
       setRecommendations(formattedRecommendations);
 
     } catch (error) {
@@ -430,6 +448,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
 
       if (response.ok) {
         await loadSavedPodcasts();
+        Alert.alert('Saved', `"${podcast.title}" has been saved to your library.`);
       } else {
         const errorData = await response.text();
         console.error('Save error response:', errorData);
@@ -440,6 +459,93 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       Alert.alert('Error', 'Failed to save podcast. Check your connection and try again.');
     }
   };
+
+  const removeRecommendation = (podcast: Podcast) => {
+    // Add to disliked so it doesn't come back
+    setDislikedPodcastIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(podcast.id);
+        return newSet;
+    });
+
+    setRecommendations(current => {
+        const filtered = current.filter(p => p.id !== podcast.id);
+        
+        const currentIds = new Set(filtered.map(p => p.id));
+        currentIds.add(podcast.id); 
+
+        // Find a replacement from allTrending
+        const replacement = allTrending.find(p => 
+            !currentIds.has(p.id) && 
+            !dislikedPodcastIds.has(p.id) &&
+            p.id !== podcast.id
+        );
+
+        if (replacement) {
+            return [...filtered, replacement];
+        }
+        return filtered;
+    });
+  };
+
+  const handleRecommendationLongPress = (podcast: Podcast) => {
+    Alert.alert(
+      podcast.title,
+      'Choose an action',
+      [
+        {
+          text: 'Save to Library',
+          onPress: () => handleSavePodcast(podcast)
+        },
+        {
+          text: 'Remove Recommendation',
+          style: 'destructive',
+          onPress: () => removeRecommendation(podcast)
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+
+  // Like podcast (thumbs up) - keep in recommendations
+  const handleLikePodcast = (podcast: Podcast) => {
+    setLikedPodcastIds(prev => {
+      const newSet = new Set(prev);
+      newSet.add(podcast.id);
+      return newSet;
+    });
+    // Remove from disliked if it was there
+    setDislikedPodcastIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(podcast.id);
+      return newSet;
+    });
+    setShowScheduleModal(false);
+  };
+
+  // Dislike podcast (thumbs down) - remove from recommendations
+  const handleDislikePodcast = (podcast: Podcast) => {
+    setDislikedPodcastIds(prev => {
+      const newSet = new Set(prev);
+      newSet.add(podcast.id);
+      return newSet;
+    });
+    // Remove from liked if it was there
+    setLikedPodcastIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(podcast.id);
+      return newSet;
+    });
+    // Remove from recommendations
+    setRecommendations(prev => prev.filter(p => p.id !== podcast.id));
+    setShowScheduleModal(false);
+  };
+
+  // Check if podcast is liked
+  const isPodcastLiked = (podcastId: string) => likedPodcastIds.has(podcastId);
 
   // Remove saved podcast
   const handleRemoveSavedPodcast = (podcast: Podcast) => {
@@ -666,7 +772,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       setAiScheduleResult(result);
     } catch (error) {
       console.error('AI scheduling error:', error);
-      Alert.alert('Error', 'Failed to generate AI schedule. Please try again.');
+      Alert.alert('Error', 'Failed to generate Guru schedule. Please try again.');
       setShowAIResultModal(false);
     } finally {
       setAiScheduleLoading(false);
@@ -854,7 +960,9 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                         tintColor={index % 2 === 0 ? '#4D5AEE' : '#FF9D00'}
                       >
                         <Image
-                          source={{ uri: podcast.artwork }}
+                          source={podcast.artwork && podcast.artwork !== 'https://via.placeholder.com/300'
+                            ? { uri: podcast.artwork }
+                            : require('../../assets/pod.png')}
                           style={styles.innerSquareImage}
                           resizeMode="cover"
                         />
@@ -867,7 +975,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
             </View>
           )}
 
-          
+
 
           {/* Current Favorites Section */}
           <View style={styles.section}>
@@ -891,7 +999,9 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                     tintColor={index % 2 === 0 ? '#FF9D00' : '#4D5AEE'}
                   >
                     <Image
-                      source={{ uri: podcast.artwork }}
+                      source={podcast.artwork && podcast.artwork !== 'https://via.placeholder.com/300'
+                        ? { uri: podcast.artwork }
+                        : require('../../assets/pod.png')}
                       style={styles.innerSquareImage}
                       resizeMode="cover"
                     />
@@ -924,7 +1034,9 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                       tintColor={index % 2 === 0 ? '#FF3B30' : '#4D5AEE'}
                     >
                       <Image
-                        source={{ uri: episode.artwork }}
+                        source={episode.artwork && episode.artwork !== 'https://via.placeholder.com/300'
+                          ? { uri: episode.artwork }
+                          : require('../../assets/pod.png')}
                         style={styles.innerRectImage}
                         resizeMode="cover"
                       />
@@ -964,7 +1076,9 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                         tintColor={index % 2 === 0 ? '#FF3B30' : '#4D5AEE'}
                       >
                         <Image
-                          source={{ uri: podcast.artwork }}
+                          source={podcast.artwork && podcast.artwork !== 'https://via.placeholder.com/300'
+                            ? { uri: podcast.artwork }
+                            : require('../../assets/pod.png')}
                           style={styles.innerSquareImage}
                           resizeMode="cover"
                         />
@@ -973,7 +1087,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
-                <Text style={styles.savedHint}>Tap to view episodes • Long press to remove</Text>
+                <Text style={styles.savedHint}>Tap to view episodes and Long press to remove</Text>
               </>
             ) : (
               <Text style={styles.emptyStateText}>No saved podcasts yet</Text>
@@ -994,6 +1108,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                   key={podcast.id}
                   style={styles.recommendationItemWrapper}
                   onPress={() => handleSchedule(podcast)}
+                  onLongPress={() => handleRecommendationLongPress(podcast)}
                 >
                   <ImageBackground
                     source={require('../../assets/sq.png')}
@@ -1002,11 +1117,14 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                     tintColor={index % 2 === 0 ? '#FF9D00' : '#4D5AEE'}
                   >
                     <Image
-                      source={{ uri: podcast.artwork }}
+                      source={podcast.artwork && podcast.artwork !== 'https://via.placeholder.com/300'
+                        ? { uri: podcast.artwork }
+                        : require('../../assets/pod.png')}
                       style={styles.innerSquareImage}
                       resizeMode="cover"
                     />
                   </ImageBackground>
+                  <Text style={styles.recommendationTitle} numberOfLines={2}>{podcast.title}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -1043,7 +1161,9 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                 tintColor="#FF9D00"
               >
                 <Image
-                  source={{ uri: selectedPodcast?.artwork || 'https://via.placeholder.com/300' }}
+                  source={selectedPodcast?.artwork && selectedPodcast.artwork !== 'https://via.placeholder.com/300'
+                    ? { uri: selectedPodcast.artwork }
+                    : require('../../assets/pod.png')}
                   style={styles.modalInnerSquareImage}
                   resizeMode="cover"
                 />
@@ -1089,6 +1209,34 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                 </Text>
               </TouchableOpacity>
             )}
+
+            {/* Interest Buttons (Thumbs Up / Thumbs Down) */}
+            {selectedPodcast && (
+              <View style={styles.interestButtonsContainer}>
+                <Text style={styles.interestLabel}>Interested?</Text>
+                <View style={styles.interestButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.interestButton,
+                      styles.thumbsDownButton,
+                    ]}
+                    onPress={() => handleDislikePodcast(selectedPodcast)}
+                  >
+                    <Text style={styles.interestButtonIcon}>👎</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.interestButton,
+                      styles.thumbsUpButton,
+                      isPodcastLiked(selectedPodcast.id) && styles.thumbsUpButtonActive,
+                    ]}
+                    onPress={() => handleLikePodcast(selectedPodcast)}
+                  >
+                    <Text style={styles.interestButtonIcon}>👍</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -1130,7 +1278,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                   style={styles.aiScheduleIcon}
                   resizeMode="contain"
                 />
-                <Text style={styles.aiScheduleText}>AI Schedule</Text>
+                <Text style={styles.aiScheduleText}>Guru Schedule</Text>
               </LinearGradient>
             </TouchableOpacity>
 
@@ -1256,25 +1404,35 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
             <Text style={styles.scheduleOptionsTitle}>Select an Episode</Text>
             <Text style={styles.episodeSubtitle}>Choose a specific episode or let AI pick the best one</Text>
 
-            {loadingEpisodes ? (
-              <View style={styles.loadingEpisodesContainer}>
-                <ActivityIndicator size="large" color="#4D5AEE" />
-                <Text style={styles.loadingEpisodesText}>Loading episodes...</Text>
-              </View>
-            ) : (
-              <View>
-                <ScrollView style={styles.episodesList} showsVerticalScrollIndicator={false}>
-                  {/* Episode List */}
-                  {podcastEpisodes.map((episode) => (
-                    <View key={episode.id} style={styles.episodeItemContainer}>
+             {loadingEpisodes ? (
+            <View style={styles.loadingEpisodesContainer}>
+              <ActivityIndicator size="large" color="#4D5AEE" />
+              <Text style={styles.loadingEpisodesText}>Loading episodes...</Text>
+            </View>
+          ) : (
+            <View>
+              <ScrollView style={styles.episodesList} showsVerticalScrollIndicator={false}>
+                {/* Episode List */}
+                {podcastEpisodes.map((episode) => (
+                  <View key={episode.id} style={styles.episodeItemContainer}>
+                    <ImageBackground
+                      source={require('../../assets/box.png')}
+                      resizeMode="stretch"
+                      style={styles.episodeRowFrame}
+                      
+                    >
                       <TouchableOpacity
-                        style={styles.episodeItem}
+                        style={styles.episodeRowInner}
                         onPress={() => handleSelectEpisode(episode)}
+                        activeOpacity={0.85}
                       >
                         <Image
-                          source={{ uri: episode.artwork }}
+                          source={episode.artwork && episode.artwork !== 'https://via.placeholder.com/300'
+                            ? { uri: episode.artwork }
+                            : require('../../assets/pod.png')}
                           style={styles.episodeItemImage}
                         />
+
                         <View style={styles.episodeItemInfo}>
                           <Text style={styles.episodeItemTitle} numberOfLines={2}>
                             {episode.title}
@@ -1282,35 +1440,40 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                           <Text style={styles.episodeItemDuration}>{episode.duration}</Text>
                         </View>
                       </TouchableOpacity>
+
                       <TouchableOpacity
                         style={styles.calendarButtonBottom}
                         onPress={() => handleEpisodeManualSchedule(episode)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        activeOpacity={0.85}
                       >
                         <CalendarIcon color="#FF9D00" />
                       </TouchableOpacity>
-                    </View>
-                  ))}
-                </ScrollView>
-                {isFromRecentEpisodes && (
-                  <TouchableOpacity
-                    style={styles.manualScheduleButtonSmall}
-                    onPress={() => {
-                      setShowEpisodeSelectionModal(false);
-                      handleManualCalendar();
-                    }}
+                    </ImageBackground>
+                  </View>
+                ))}
+              </ScrollView>
+
+              {isFromRecentEpisodes && (
+                <TouchableOpacity
+                  style={styles.manualScheduleButtonSmall}
+                  onPress={() => {
+                    setShowEpisodeSelectionModal(false);
+                    handleManualCalendar();
+                  }}
+                >
+                  <LinearGradient
+                    colors={['#4D5AEE', '#FF9D00']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.manualScheduleButtonSmallGradient}
                   >
-                    <LinearGradient
-                      colors={['#4D5AEE', '#FF9D00']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.manualScheduleButtonSmallGradient}
-                    >
-                      <Text style={styles.manualScheduleButtonSmallText}>Manual Schedule</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
+                    <Text style={styles.manualScheduleButtonSmallText}>Manual Schedule</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -1326,72 +1489,122 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
           style={styles.modalOverlay}
           onPress={() => setShowDatePickerModal(false)}
         >
-          <Pressable style={styles.datePickerContent}>
-            <TouchableOpacity
-              style={styles.scheduleCloseButton}
-              onPress={() => setShowDatePickerModal(false)}
-            >
-              <Text style={styles.scheduleCloseButtonText}>✕</Text>
-            </TouchableOpacity>
+         <Pressable style={styles.datePickerModalCard}>
+  <TouchableOpacity
+    style={styles.scheduleCloseButton}
+    onPress={() => setShowDatePickerModal(false)}
+  >
+    <Text style={styles.scheduleCloseButtonText}>✕</Text>
+  </TouchableOpacity>
 
-            <Text style={styles.scheduleOptionsTitle}>Select Week</Text>
-            <Text style={styles.episodeSubtitle}>
-              {selectedEpisode ? `Scheduling: ${selectedEpisode.title}` : 'AI will choose the best episode'}
-            </Text>
+  <Text style={styles.datePickerModalTitle}>Schedule Week</Text>
+  <Text style={styles.datePickerModalSubtitle}>
+    Select the week start date for your schedule
+  </Text>
 
-            {/* Week Navigation */}
-            <View style={styles.weekNavigator}>
-              <TouchableOpacity onPress={() => navigateWeek('prev')} style={styles.weekNavButton}>
-                <Text style={styles.weekNavText}>◀</Text>
-              </TouchableOpacity>
+  {/* Custom Date Picker */}
+  <View style={styles.datePickerContainer}>
+    <TouchableOpacity
+      style={styles.dateArrowButton}
+      onPress={() => navigateWeek('prev')}
+    >
+      <Ionicons name="chevron-back" size={28} color="#4D5AEE" />
+    </TouchableOpacity>
 
-              <View style={styles.weekDisplay}>
-                <Text style={styles.weekText}>
-                  Week of {weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </Text>
-              </View>
+    <TouchableOpacity
+      style={styles.dateDisplayBox}
+      onPress={() => setShowDatePicker(true)}
+      activeOpacity={0.85}
+    >
+      <Text style={styles.dateDisplayMonth}>
+        {weekStartDate.toLocaleDateString('en-US', { month: 'short' })}
+      </Text>
+      <Text style={styles.dateDisplayDay}>{weekStartDate.getDate()}</Text>
+      <Text style={styles.dateDisplayYear}>{weekStartDate.getFullYear()}</Text>
+      <Text style={styles.dateDisplayWeekday}>
+        {weekStartDate.toLocaleDateString('en-US', { weekday: 'long' })}
+      </Text>
+    </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => navigateWeek('next')} style={styles.weekNavButton}>
-                <Text style={styles.weekNavText}>▶</Text>
-              </TouchableOpacity>
-            </View>
+    <TouchableOpacity
+      style={styles.dateArrowButton}
+      onPress={() => navigateWeek('next')}
+    >
+      <Ionicons name="chevron-forward" size={28} color="#4D5AEE" />
+    </TouchableOpacity>
+  </View>
 
-            {/* Quick Select Buttons */}
-            <View style={styles.quickSelectContainer}>
-              <TouchableOpacity
-                style={styles.quickSelectButton}
-                onPress={() => setWeekStartDate(getWeekStartDate(new Date()))}
-              >
-                <Text style={styles.quickSelectText}>This Week</Text>
-              </TouchableOpacity>
+  {showDatePicker && (
+    <DateTimePicker
+      value={weekStartDate}
+      mode="date"
+      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+      onChange={(event, selectedDate) => {
+        if (Platform.OS === 'android') setShowDatePicker(false);
+        if (selectedDate) setWeekStartDate(getWeekStartDate(selectedDate));
+      }}
+      style={styles.dateTimePicker}
+    />
+  )}
 
-              <TouchableOpacity
-                style={styles.quickSelectButton}
-                onPress={() => {
-                  const nextWeek = new Date();
-                  nextWeek.setDate(nextWeek.getDate() + 7);
-                  setWeekStartDate(getWeekStartDate(nextWeek));
-                }}
-              >
-                <Text style={styles.quickSelectText}>Next Week</Text>
-              </TouchableOpacity>
-            </View>
+  {Platform.OS === 'ios' && showDatePicker && (
+    <TouchableOpacity
+      style={styles.datePickerDoneButton}
+      onPress={() => setShowDatePicker(false)}
+    >
+      <Text style={styles.datePickerDoneText}>Done</Text>
+    </TouchableOpacity>
+  )}
 
-            {/* Generate Button */}
-            <TouchableOpacity
-              style={styles.generateButton}
-              onPress={handleGenerateAISchedule}
-            >
-              <LinearGradient
-                colors={['#FF9D00', '#4D5AEE']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.generateGradient}
-              >
-                <Text style={styles.generateText}>Generate Schedule</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </Pressable>
+  {/* Quick Select Buttons */}
+  <View style={styles.quickSelectContainer}>
+    <TouchableOpacity
+      style={styles.quickSelectButton}
+      onPress={() => setWeekStartDate(getWeekStartDate(new Date()))}
+    >
+      <Text style={styles.quickSelectText}>This Week</Text>
+    </TouchableOpacity>
+
+    <TouchableOpacity
+      style={styles.quickSelectButton}
+      onPress={() => {
+        const next = new Date();
+        next.setDate(next.getDate() + 7);
+        setWeekStartDate(getWeekStartDate(next));
+      }}
+    >
+      <Text style={styles.quickSelectText}>Next Week</Text>
+    </TouchableOpacity>
+  </View>
+
+  {/* Generate Button */}
+  <TouchableOpacity
+    style={styles.generateScheduleButton}
+    onPress={handleGenerateAISchedule}
+  >
+    <LinearGradient
+      colors={['#FF9D00', '#4D5AEE']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={styles.generateButtonGradient}
+    >
+      <Image
+        source={require('../../assets/ai.png')}
+        style={styles.generateButtonIcon}
+        resizeMode="contain"
+      />
+      <Text style={styles.generateButtonText}>Generate Schedule</Text>
+    </LinearGradient>
+  </TouchableOpacity>
+
+  <TouchableOpacity
+    style={styles.datePickerCancelButton}
+    onPress={() => setShowDatePickerModal(false)}
+  >
+    {/* <Text style={styles.datePickerCancelText}>Cancel</Text> */}
+  </TouchableOpacity>
+</Pressable>
+
         </Pressable>
       </Modal>
 
@@ -1435,7 +1648,9 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                     onPress={() => handleSchedule(episode)}
                   >
                     <Image
-                      source={{ uri: episode.artwork }}
+                      source={episode.artwork && episode.artwork !== 'https://via.placeholder.com/300'
+                        ? { uri: episode.artwork }
+                        : require('../../assets/pod.png')}
                       style={styles.episodeItemImage}
                     />
                     <View style={styles.episodeItemInfo}>
@@ -1496,17 +1711,23 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
               <View style={styles.aiLoadingContainer}>
                 <ActivityIndicator size="large" color="#4D5AEE" />
                 <Text style={styles.aiLoadingText}>Finding the best time...</Text>
-                <Text style={styles.aiLoadingSubtext}>AI is analyzing your calendar</Text>
+                <Text style={styles.aiLoadingSubtext}>Guru is analyzing your calendar</Text>
               </View>
             ) : aiScheduleResult ? (
               <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={styles.scheduleOptionsTitle}>AI Schedule</Text>
+                <Text style={styles.scheduleOptionsTitle}>Guru Schedule</Text>
 
                 {aiScheduleResult.scheduledEpisodes.length > 0 ? (
                   <>
                     {/* Scheduled Episodes */}
                     {aiScheduleResult.scheduledEpisodes.map((episode, index) => (
-                      <View key={index} style={styles.scheduledEpisodeCard}>
+                      <ImageBackground
+                        key={index}
+                        source={require('../../assets/box.png')}
+                        style={styles.scheduledEpisodeCard}
+                        imageStyle={styles.scheduledEpisodeCardImage}
+                        resizeMode="stretch"
+                      >
                         <View style={styles.scheduledEpisodeHeader}>
                           <Text style={styles.scheduledDay}>{episode.day}</Text>
                           <Text style={styles.scheduledTime}>
@@ -1522,22 +1743,19 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                         {episode.is_already_scheduled && (
                           <Text style={styles.alreadyScheduledBadge}>Already Scheduled</Text>
                         )}
-                      </View>
+                      </ImageBackground>
                     ))}
 
                     
 
                     {/* Action Buttons */}
                     <View style={styles.aiResultActions}>
-                      <TouchableOpacity
-                        style={styles.acceptButton}
-                        onPress={handleAcceptAISchedule}
-                        disabled={isAddingToCalendar}
-                      >
-                        <LinearGradient
-                          colors={['#4CAF50', '#45a049']}
-                          style={styles.acceptGradient}
-                        >
+                      <TouchableOpacity style={[styles.actionButtonBase, styles.regenerateButton]} onPress={handleGenerateAISchedule}>
+                        <Text style={styles.regenerateText}>Regenerate</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity style={[styles.actionButtonBase, styles.acceptButton]} onPress={handleAcceptAISchedule} disabled={isAddingToCalendar}>
+                        <LinearGradient colors={['#FF9D00', '#FF9D00']} style={styles.acceptGradient}>
                           {isAddingToCalendar ? (
                             <ActivityIndicator size="small" color="#FFF" />
                           ) : (
@@ -1545,14 +1763,8 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                           )}
                         </LinearGradient>
                       </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.regenerateButton}
-                        onPress={handleGenerateAISchedule}
-                      >
-                        <Text style={styles.regenerateText}>Regenerate</Text>
-                      </TouchableOpacity>
                     </View>
+
                   </>
                 ) : (
                   <View style={styles.noScheduleContainer}>
@@ -1750,6 +1962,15 @@ const styles = StyleSheet.create({
   },
   recommendationItemWrapper: {
     marginRight: 15,
+    alignItems: 'center',
+  },
+  recommendationTitle: {
+    color: '#000',
+    fontSize: 12,
+    fontFamily: 'Margarine',
+    textAlign: 'center',
+    marginTop: 8,
+    width: 100,
   },
   episodeTitleContainer: {
     width: 100,
@@ -1992,6 +2213,186 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
+  // ===== DATE PICKER MODAL (ported styles) =====
+
+datePickerModalOverlay: {
+  flex: 1,
+  backgroundColor: 'rgba(0,0,0,0.5)',
+  justifyContent: 'center',
+  alignItems: 'center',
+  paddingHorizontal: 16,
+},
+
+datePickerModalCard: {
+  width: '100%',
+  maxWidth: 380,
+  backgroundColor: '#F7E8FF',
+  borderRadius: 24,
+  padding: 24,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 10 },
+  shadowOpacity: 0.2,
+  shadowRadius: 20,
+  elevation: 12,
+  alignItems: 'center',
+},
+
+datePickerModalTitle: {
+  fontSize: 24,
+  fontFamily: 'Margarine',
+  color: '#4D5AEE',
+  marginBottom: 8,
+  textAlign: 'center',
+},
+
+datePickerModalSubtitle: {
+  fontSize: 14,
+  fontFamily: 'Margarine',
+  color: '#666',
+  textAlign: 'center',
+  marginBottom: 24,
+},
+
+datePickerContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginBottom: 20,
+},
+
+dateArrowButton: {
+  width: 44,
+  height: 44,
+  borderRadius: 22,
+  backgroundColor: 'rgba(77, 90, 238, 0.1)',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+
+dateDisplayBox: {
+  backgroundColor: 'rgba(77, 90, 238, 0.15)',
+  borderRadius: 16,
+  paddingVertical: 16,
+  paddingHorizontal: 32,
+  marginHorizontal: 16,
+  alignItems: 'center',
+  borderWidth: 2,
+  borderColor: '#4D5AEE',
+},
+
+dateDisplayMonth: {
+  fontSize: 14,
+  fontFamily: 'Margarine',
+  color: '#FF9D00',
+  textTransform: 'uppercase',
+},
+
+dateDisplayDay: {
+  fontSize: 48,
+  fontFamily: 'Margarine',
+  color: '#4D5AEE',
+  lineHeight: 52,
+},
+
+dateDisplayYear: {
+  fontSize: 16,
+  fontFamily: 'Margarine',
+  color: '#4D5AEE',
+},
+
+dateDisplayWeekday: {
+  fontSize: 14,
+  fontFamily: 'Margarine',
+  color: '#666',
+  marginTop: 4,
+},
+
+dateTimePicker: {
+  width: '100%',
+  backgroundColor: 'white',
+  borderRadius: 12,
+  marginBottom: 10,
+},
+
+datePickerDoneButton: {
+  backgroundColor: '#4D5AEE',
+  paddingVertical: 8,
+  paddingHorizontal: 24,
+  borderRadius: 16,
+  marginBottom: 16,
+},
+
+datePickerDoneText: {
+  color: '#FFF',
+  fontSize: 14,
+  fontFamily: 'Margarine',
+},
+
+quickSelectContainer: {
+  flexDirection: 'row',
+  gap: 12,
+  marginBottom: 24,
+},
+
+quickSelectButton: {
+  backgroundColor: 'rgba(255, 157, 0, 0.15)',
+  paddingVertical: 10,
+  paddingHorizontal: 20,
+  borderRadius: 20,
+  borderWidth: 1,
+  borderColor: '#FF9D00',
+},
+
+quickSelectText: {
+  fontSize: 14,
+  fontFamily: 'Margarine',
+  color: '#FF9D00',
+},
+
+generateScheduleButton: {
+  width: '100%',
+  borderRadius: 25,
+  marginBottom: 12,
+  shadowColor: '#4D5AEE',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.3,
+  shadowRadius: 6,
+  elevation: 5,
+},
+
+generateButtonGradient: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingVertical: 14,
+  paddingHorizontal: 24,
+  borderRadius: 25,
+  gap: 10,
+},
+
+generateButtonIcon: {
+  width: 24,
+  height: 24,
+},
+
+generateButtonText: {
+  color: '#FFF',
+  fontSize: 18,
+  fontFamily: 'Margarine',
+  fontWeight: '700',
+},
+
+datePickerCancelButton: {
+  paddingVertical: 10,
+  paddingHorizontal: 24,
+},
+
+datePickerCancelText: {
+  fontSize: 16,
+  fontFamily: 'Margarine',
+  color: '#666',
+},
+
   modalSaveButtonSaved: {
     backgroundColor: 'rgba(255, 59, 48, 0.3)',
     borderColor: '#FF3B30',
@@ -2001,6 +2402,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Margarine',
     fontWeight: '600',
+  },
+  interestButtonsContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  interestLabel: {
+    color: '#FFF',
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    marginBottom: 10,
+  },
+  interestButtons: {
+    flexDirection: 'row',
+    gap: 20,
+  },
+  interestButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  thumbsDownButton: {
+    backgroundColor: 'rgba(255, 59, 48, 0.2)',
+    borderColor: '#FF3B30',
+  },
+  thumbsUpButton: {
+    backgroundColor: 'rgba(76, 217, 100, 0.2)',
+    borderColor: '#4CD964',
+  },
+  thumbsUpButtonActive: {
+    backgroundColor: '#4CD964',
+  },
+  interestButtonIcon: {
+    fontSize: 24,
   },
   scheduleOptionsContent: {
     backgroundColor: 'rgba(255, 157, 0, 0.85)',
@@ -2020,13 +2457,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: '#4D5AEE',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
   },
   scheduleCloseButtonText: {
-    color: '#FFF',
+    color: '#ffffff',
     fontSize: 20,
     fontWeight: 'bold',
   },
@@ -2182,6 +2619,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginRight: 12,
   },
+
   episodeItemInfo: {
     flex: 1,
   },
@@ -2236,24 +2674,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     fontWeight: '600',
   },
-  quickSelectContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-    marginBottom: 20,
-  },
-  quickSelectButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-  },
-  quickSelectText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontFamily: 'Margarine',
-    fontWeight: '600',
-  },
+
+
   generateButton: {
     borderRadius: 25,
     overflow: 'hidden',
@@ -2301,10 +2723,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   scheduledEpisodeCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 12,
     padding: 16,
     marginBottom: 12,
+  },
+  scheduledEpisodeCardImage: {
+    borderRadius: 12,
   },
   scheduledEpisodeHeader: {
     flexDirection: 'row',
@@ -2361,43 +2784,57 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     lineHeight: 20,
   },
-  aiResultActions: {
-    marginTop: 10,
-  },
+ aiResultActions: {
+  marginTop: 10,
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 12,
+},
   acceptButton: {
-    borderRadius: 25,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
+  borderRadius: 20,
+  paddingHorizontal: 0,
+  overflow: 'hidden',
+},
   acceptGradient: {
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    alignItems: 'center',
-    borderRadius: 25,
-  },
+  paddingVertical: 12,
+  paddingHorizontal: 20,
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 20,
+},
   acceptText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontFamily: 'Margarine',
-    fontWeight: '700',
-  },
+  fontSize: 14,
+  fontFamily: 'Margarine',
+  color: '#FFF',
+  fontWeight: '700',
+  textAlign: 'center',
+},
   regenerateButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 25,
-    alignItems: 'center',
-  },
+  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  paddingVertical: 12,
+  paddingHorizontal: 25,
+  borderRadius: 20,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
   regenerateText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontFamily: 'Margarine',
-    fontWeight: '600',
-  },
+  fontSize: 14,
+  fontFamily: 'Margarine',
+  color: '#ffffff',
+  fontWeight: '700',
+  textAlign: 'center',
+},
   noScheduleContainer: {
     alignItems: 'center',
     paddingVertical: 40,
   },
+  actionButtonBase: {
+  minHeight: 44,
+  borderRadius: 20,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
   noScheduleText: {
     color: '#FFF',
     fontSize: 18,
@@ -2441,9 +2878,20 @@ const styles = StyleSheet.create({
   //   fontWeight: '700',
   // },
   episodeItemContainer: {
-    marginBottom: 8,
+    marginBottom: 10,
     position: 'relative',
+    marginHorizontal: 10,
   },
+  episodeRowFrame: {
+  width: '100%',
+  alignSelf: 'stretch',
+  borderRadius: 16,
+  overflow: 'hidden',
+  paddingHorizontal: 0,   // was 12 → tighter so content reaches edges
+  paddingVertical: 10,
+},
+
+
   manualScheduleButtonSmall: {
     borderRadius: 25,
     marginBottom: 15,
@@ -2466,4 +2914,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     fontWeight: '700',
   },
+  episodeRowInner: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: 'transparent', // or 'rgba(255,255,255,0.06)' for a tiny tint
+  borderRadius: 10,
+  padding: 10,
+},
+
+// keep your existing ones (included here for completeness)
+
 });

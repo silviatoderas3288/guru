@@ -163,4 +163,14 @@ export const WorkoutApiService = {
   async deleteExercise(exerciseId: string): Promise<void> {
     await workoutApi.delete(`/exercises/${exerciseId}`);
   },
+
+  async estimateCalories(title: string, duration: string): Promise<number> {
+    try {
+      const response = await workoutApi.post<{ calories: number }>('/estimate-calories', { title, duration });
+      return response.data.calories;
+    } catch (error) {
+      console.error('Error estimating calories:', error);
+      return 0;
+    }
+  },
 };
