@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { usePreferencesStore } from '../store/usePreferencesStore';
-import schedulingAgentApi, { GenerateScheduleResponse, ScheduledEvent } from '../services/schedulingAgentApi';
+import schedulingAgentApi, { GenerateScheduleResponse, ScheduledEvent, TodoScheduleResponse, TodoItemRequest, ScheduledTodo, UnscheduledTodo } from '../services/schedulingAgentApi';
 
 interface Task {
   id: string;
@@ -203,7 +203,7 @@ const SwipeableListItem: React.FC<SwipeableListItemProps> = ({ children, onDelet
     <View style={styles.swipeableContainer}>
       {onAdd && (
         <View style={[styles.deleteBackground, styles.addBackground]}>
-          <Text style={styles.addBackgroundText}>Add to list</Text>
+          <Text style={styles.addBackgroundText}> + to do</Text>
         </View>
       )}
       <View style={styles.deleteBackground}>
@@ -291,7 +291,11 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
   const [showAITodoModal, setShowAITodoModal] = useState(false);
   const [aiTodoSelectedDate, setAiTodoSelectedDate] = useState<'today' | 'tomorrow'>('today');
   const [aiSelectedTodoIds, setAiSelectedTodoIds] = useState<Set<string>>(new Set());
-  
+  const [aiTodoOrder, setAiTodoOrder] = useState<string[]>([]); // Order = priority (first = highest)
+  const [aiTodoScheduleLoading, setAiTodoScheduleLoading] = useState(false);
+  const [aiTodoScheduleResult, setAiTodoScheduleResult] = useState<TodoScheduleResponse | null>(null);
+  const [aiTodoDurations, setAiTodoDurations] = useState<Map<string, number>>(new Map()); // Duration estimates per todo
+
   // AI Selection Modal State
   const [showAISelectionModal, setShowAISelectionModal] = useState(false);
 
@@ -1208,6 +1212,142 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
     }
   };
 
+  // AI Todo Scheduling Functions
+  const openAITodoModal = () => {
+    // Initialize order: maintain current order of todos
+    setAiTodoOrder(todoItems.map(t => t.id));
+    // Pre-select non-completed todos
+    const nonCompletedIds = new Set(todoItems.filter(t => !t.completed).map(t => t.id));
+    setAiSelectedTodoIds(nonCompletedIds);
+    // Initialize default durations (30 min each)
+    const defaultDurations = new Map<string, number>();
+    todoItems.forEach(t => defaultDurations.set(t.id, 30));
+    setAiTodoDurations(defaultDurations);
+    // Reset any previous results
+    setAiTodoScheduleResult(null);
+    setShowAITodoModal(true);
+  };
+
+  const moveTodoUp = (todoId: string) => {
+    setAiTodoOrder(prev => {
+      const index = prev.indexOf(todoId);
+      if (index <= 0) return prev;
+      const newOrder = [...prev];
+      [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+      return newOrder;
+    });
+  };
+
+  const moveTodoDown = (todoId: string) => {
+    setAiTodoOrder(prev => {
+      const index = prev.indexOf(todoId);
+      if (index === -1 || index >= prev.length - 1) return prev;
+      const newOrder = [...prev];
+      [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+      return newOrder;
+    });
+  };
+
+  const updateTodoDuration = (todoId: string, duration: number) => {
+    setAiTodoDurations(prev => {
+      const newMap = new Map(prev);
+      newMap.set(todoId, duration);
+      return newMap;
+    });
+  };
+
+  const handleAITodoSchedule = async () => {
+    if (aiSelectedTodoIds.size === 0) {
+      Alert.alert('No Todos Selected', 'Please select at least one todo to schedule.');
+      return;
+    }
+
+    setAiTodoScheduleLoading(true);
+    try {
+      // Calculate target date
+      const targetDate = new Date();
+      if (aiTodoSelectedDate === 'tomorrow') {
+        targetDate.setDate(targetDate.getDate() + 1);
+      }
+      const dateString = targetDate.toISOString().split('T')[0];
+
+      // Build prioritized todos list based on user's ranking and selection
+      const selectedTodos: TodoItemRequest[] = aiTodoOrder
+        .filter(id => aiSelectedTodoIds.has(id))
+        .map((id, index) => {
+          const todo = todoItems.find(t => t.id === id);
+          if (!todo) return null;
+          return {
+            id: todo.id,
+            text: todo.text,
+            priority: index + 1, // Position in order = priority (1 = highest)
+            estimated_duration_minutes: aiTodoDurations.get(id) || 30,
+            is_selected: true,
+          } as TodoItemRequest;
+        })
+        .filter((t): t is TodoItemRequest => t !== null);
+
+      console.log('Scheduling todos:', selectedTodos);
+
+      const result = await schedulingAgentApi.scheduleTodos({
+        targetDate: dateString,
+        todos: selectedTodos,
+      });
+
+      setAiTodoScheduleResult(result);
+
+      // If all todos were scheduled successfully, show success message
+      if (result.unscheduledCount === 0) {
+        Alert.alert(
+          'Schedule Created!',
+          `${result.scheduledCount} todo(s) have been added to your calendar for ${aiTodoSelectedDate === 'today' ? 'today' : 'tomorrow'}.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                setShowAITodoModal(false);
+                loadCalendarEvents();
+                loadTodoItems();
+              }
+            }
+          ]
+        );
+      }
+      // If some couldn't be scheduled, keep modal open to show warnings
+    } catch (error) {
+      console.error('Error scheduling todos:', error);
+      Alert.alert(
+        'Scheduling Error',
+        'Failed to schedule todos. Please make sure you have set your preferences in Settings.'
+      );
+    } finally {
+      setAiTodoScheduleLoading(false);
+    }
+  };
+
+  const handleAcceptPartialSchedule = () => {
+    Alert.alert(
+      'Schedule Accepted',
+      `${aiTodoScheduleResult?.scheduledCount || 0} todo(s) have been added to your calendar. You can reschedule the remaining items later.`,
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            setShowAITodoModal(false);
+            setAiTodoScheduleResult(null);
+            loadCalendarEvents();
+            loadTodoItems();
+          }
+        }
+      ]
+    );
+  };
+
+  const handleReorderAndRetry = () => {
+    // User wants to reorder - reset result and keep modal open
+    setAiTodoScheduleResult(null);
+  };
+
   const startEditingWeeklyGoal = (goal: ListItem) => {
     setEditingWeeklyGoalId(goal.id);
     setEditingWeeklyGoalText(goal.text);
@@ -1795,11 +1935,11 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
   
   // Dynamic styles for the popup based on activeListType
   const popupTheme = activeListType === 'weekly' ? {
-    containerBg: 'rgba(77, 90, 238, 0.70)', // Blue
+    containerBg: 'rgb(77, 90, 238)', // Blue
     accentColor: '#FF9D00', // Orange
     buttonTextColor: '#FFF', // White
   } : {
-    containerBg: 'rgba(255, 157, 0, 0.70)', // Orange
+    containerBg: 'rgb(255, 157, 0)', // Orange
     accentColor: '#4D5AEE', // Blue
     buttonTextColor: '#FFF', // White
   };
@@ -1968,7 +2108,7 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                       <View>
                         <Image
                           source={require('../../assets/to_do.png')}
-                          style={styles.checkbox}
+                          style={[styles.checkbox, { tintColor: '#FF9D00' }]}
                           resizeMode="contain"
                         />
                         {item.completed && (
@@ -2479,24 +2619,25 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
             {/* AI info section */}
             <View style={styles.aiWeeklyGoalsInfoSection}>
               <Text style={styles.aiWeeklyGoalsInfo}>
-                 Let AI help you organize and prioritize your weekly goals
+                 Let your Guru help you organize and prioritize your weekly goals
               </Text>
             </View>
 
             {/* Goals list or AI Results */}
             <ScrollView style={styles.aiWeeklyGoalsScroll} showsVerticalScrollIndicator={false}>
               {aiWeeklyScheduleResult ? (
-                // Show AI schedule results
+                // AI schedule results
                 <>
                   <Text style={styles.sectionSubtitle}>AI-Optimized Weekly Schedule</Text>
-                  {aiWeeklyScheduleResult.scheduledEvents && aiWeeklyScheduleResult.scheduledEvents.length > 0 ? (
+
+                  {aiWeeklyScheduleResult.scheduledEvents?.length ? (
                     aiWeeklyScheduleResult.scheduledEvents.map((event: ScheduledEvent, index: number) => (
                       <View key={`event-${index}`} style={styles.scheduleItemBox}>
                         <Text style={styles.scheduleItemTime}>
                           {event.day} • {event.start_time} - {event.end_time}
                         </Text>
                         <Text style={styles.scheduleItemTitle}>{event.title}</Text>
-                        {event.description && (
+                        {!!event.description && (
                           <Text style={styles.scheduleItemDescription}>{event.description}</Text>
                         )}
                       </View>
@@ -2506,10 +2647,11 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                   )}
                 </>
               ) : (
-                // Show regular goals list with ranking
+                // Regular goals list with ranking + box PNG border
                 <>
-                  <Text style={styles.sectionSubtitle}>Your Goals ({weeklyGoals.length})</Text>
-                  <Text style={styles.aiGoalsHint}>Tap checkbox to select • Use arrows to reorder by priority</Text>
+                  <Text style={styles.sectionSubtitle1}>Your Goals ({weeklyGoals.length})</Text>
+                  <Text style={styles.aiGoalsHint}>Use arrows to reorder by priority</Text>
+
                   {weeklyGoals.length === 0 ? (
                     <Text style={styles.aiEmptyStateText}>No weekly goals yet. Add one to get started!</Text>
                   ) : (
@@ -2518,57 +2660,85 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                       .filter((goal): goal is ListItem => goal !== undefined)
                       .map((goal, index) => {
                         const isSelected = aiWeeklySelectedGoalIds.has(goal.id);
+
                         return (
-                          <View key={goal.id} style={styles.aiGoalItem}>
-                            <Text style={styles.goalRankNumber}>{index + 1}</Text>
-                            <TouchableOpacity
-                              style={styles.aiGoalItemContent}
-                              onPress={() => toggleWeeklyGoalSelection(goal.id)}
-                              activeOpacity={0.7}
-                            >
-                              <View>
-                                <Image
-                                  source={require('../../assets/to_do.png')}
-                                  style={styles.checkbox}
-                                  resizeMode="contain"
-                                />
-                                {isSelected && (
-                                  <Image
-                                    source={require('../../assets/check.png')}
-                                    style={styles.checkmark}
-                                    resizeMode="contain"
-                                  />
-                                )}
+                          <View key={goal.id} style={styles.aiGoalItemRow}>
+                            <View style={styles.aiGoalBoxContainer}>
+                              <Image
+                                source={require('../../assets/box.png')}
+                                style={styles.aiGoalBoxBackground}
+                                resizeMode="stretch"
+                              />
+
+                              <View style={styles.aiGoalBoxContent}>
+                                {/* Rank number (same style as before) */}
+                                <Text style={styles.goalRankNumber}>{index + 1}</Text>
+
+                                {/* Checkbox + text */}
+                                <TouchableOpacity
+                                  style={styles.aiGoalItemContent}
+                                  onPress={() => toggleWeeklyGoalSelection(goal.id)}
+                                  activeOpacity={0.7}
+                                >
+                                  <View>
+                                    <Image
+                                      source={require('../../assets/to_do.png')}
+                                      style={[styles.checkbox, { tintColor: '#FF9D00' }]}
+                                      resizeMode="contain"
+                                    />
+                                    {isSelected && (
+                                      <Image
+                                        source={require('../../assets/check.png')}
+                                        style={styles.checkmark}
+                                        resizeMode="contain"
+                                      />
+                                    )}
+                                  </View>
+
+                                  <Text
+                                    style={[
+                                      styles.aiGoalText,
+                                      { color: '#FFF' },
+                                      goal.completed && styles.aiGoalTextCompleted,
+                                    ]}
+                                    numberOfLines={2}
+                                  >
+                                    {goal.text}
+                                  </Text>
+                                </TouchableOpacity>
+
+                                {/* Reorder arrows (same style/color as before) */}
+                                <View style={styles.goalReorderButtons}>
+                                  <TouchableOpacity
+                                    onPress={() => moveGoalUp(goal.id)}
+                                    style={[styles.reorderButton, index === 0 && styles.reorderButtonDisabled]}
+                                    disabled={index === 0}
+                                    activeOpacity={0.7}
+                                  >
+                                    <Image
+                                      source={require('../../assets/arrow.png')}
+                                      style={{ width: 12, height: 12, transform: [{ rotate: '180deg' }] }}
+                                      resizeMode="contain"
+                                    />
+                                  </TouchableOpacity>
+
+                                  <TouchableOpacity
+                                    onPress={() => moveGoalDown(goal.id)}
+                                    style={[
+                                      styles.reorderButton,
+                                      index === aiWeeklyGoalsOrder.length - 1 && styles.reorderButtonDisabled,
+                                    ]}
+                                    disabled={index === aiWeeklyGoalsOrder.length - 1}
+                                    activeOpacity={0.7}
+                                  >
+                                    <Image
+                                      source={require('../../assets/arrow.png')}
+                                      style={{ width: 12, height: 12, transform: [{ rotate: '0deg' }] }}
+                                      resizeMode="contain"
+                                    />
+                                  </TouchableOpacity>
+                                </View>
                               </View>
-                              <Text style={[styles.aiGoalText, goal.completed && styles.aiGoalTextCompleted]}>
-                                {goal.text}
-                              </Text>
-                            </TouchableOpacity>
-                            <View style={styles.goalReorderButtons}>
-                              <TouchableOpacity
-                                onPress={() => moveGoalUp(goal.id)}
-                                style={[styles.reorderButton, index === 0 && styles.reorderButtonDisabled]}
-                                disabled={index === 0}
-                                activeOpacity={0.7}
-                              >
-                                <Image 
-                                  source={require('../../assets/arrow.png')} 
-                                  style={{ width: 12, height: 12, transform: [{ rotate: '180deg' }] }} 
-                                  resizeMode="contain"
-                                />
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => moveGoalDown(goal.id)}
-                                style={[styles.reorderButton, index === aiWeeklyGoalsOrder.length - 1 && styles.reorderButtonDisabled]}
-                                disabled={index === aiWeeklyGoalsOrder.length - 1}
-                                activeOpacity={0.7}
-                              >
-                                <Image 
-                                  source={require('../../assets/arrow.png')} 
-                                  style={{ width: 12, height: 12, transform: [{ rotate: '0deg' }] }} 
-                                  resizeMode="contain"
-                                />
-                              </TouchableOpacity>
                             </View>
                           </View>
                         );
@@ -2577,6 +2747,7 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                 </>
               )}
             </ScrollView>
+
 
             {/* Action buttons */}
             <View style={styles.aiWeeklyGoalsFooter}>
@@ -2605,7 +2776,7 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
                   activeOpacity={0.7}
                 >
                   <LinearGradient
-                    colors={aiWeeklyScheduleLoading ? ['#CCCCCC', '#999999'] : ['#4D5AEE', '#8B7FFF']}
+                    colors={aiTodoScheduleLoading ? ['#CCCCCC', '#999999'] : ['#FF9D00', '#FFB84D']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.aiWeeklyGoalsButtonGradient}
@@ -2628,127 +2799,321 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
         visible={showAITodoModal}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => setShowAITodoModal(false)}
+        onRequestClose={() => {
+          setShowAITodoModal(false);
+          setAiTodoScheduleResult(null);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.aiTodoContainer}>
             {/* Header with close button */}
             <View style={styles.aiTodoHeader}>
-              <Text style={styles.aiTodoTitle}>Organize To-Do List</Text>
+              <Text style={styles.aiTodoTitle}>
+                {aiTodoScheduleResult ? 'Schedule Results' : 'Smart Schedule Todos'}
+              </Text>
               <TouchableOpacity
-                onPress={() => setShowAITodoModal(false)}
+                onPress={() => {
+                  setShowAITodoModal(false);
+                  setAiTodoScheduleResult(null);
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={styles.closeButtonLarge}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Date selector */}
-            <View style={styles.aiTodoDateSelector}>
-              <Text style={styles.aiTodoDateLabel}>Schedule for:</Text>
-              <View style={styles.aiTodoDateButtonsRow}>
-                <TouchableOpacity
-                  style={[styles.aiTodoDateButton, aiTodoSelectedDate === 'today' && styles.aiTodoDateButtonSelected]}
-                  onPress={() => setAiTodoSelectedDate('today')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.aiTodoDateButtonText, aiTodoSelectedDate === 'today' && styles.aiTodoDateButtonTextSelected]}>
-                    Today
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.aiTodoDateButton, aiTodoSelectedDate === 'tomorrow' && styles.aiTodoDateButtonSelected]}
-                  onPress={() => setAiTodoSelectedDate('tomorrow')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.aiTodoDateButtonText, aiTodoSelectedDate === 'tomorrow' && styles.aiTodoDateButtonTextSelected]}>
-                    Tomorrow
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            {aiTodoScheduleResult ? (
+              // Show results view
+              <>
+                {/* Results summary */}
+                <View style={styles.aiTodoInfoSection}>
+                  {aiTodoScheduleResult.requiresReranking ? (
+                    <View style={styles.aiTodoWarningBox}>
+                      <Text style={styles.aiTodoWarningTitle}>Some todos couldn't be scheduled</Text>
+                      <Text style={styles.aiTodoWarningText}>
+                        {aiTodoScheduleResult.scheduledCount} scheduled, {aiTodoScheduleResult.unscheduledCount} couldn't fit.
+                        {'\n'}Available time: {aiTodoScheduleResult.totalAvailableMinutes} min
+                        {'\n'}Requested time: {aiTodoScheduleResult.totalRequestedMinutes} min
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.aiTodoSuccessBox}>
+                      <Text style={styles.aiTodoSuccessTitle}>All todos scheduled!</Text>
+                      <Text style={styles.aiTodoSuccessText}>
+                        {aiTodoScheduleResult.scheduledCount} todo(s) added to your calendar.
+                      </Text>
+                    </View>
+                  )}
+                </View>
 
-            {/* AI info section */}
-            <View style={styles.aiTodoInfoSection}>
-              <Text style={styles.aiTodoInfo}>
-                Select the items you definitely want to do. The scheduler will help distribute them throughout the selected day.
-              </Text>
-            </View>
+                <ScrollView style={styles.aiTodoScroll} showsVerticalScrollIndicator={false}>
+                  {/* Scheduled todos */}
+                  {aiTodoScheduleResult.scheduledTodos.length > 0 && (
+                    <>
+                      <Text style={styles.sectionSubtitle}>Scheduled ({aiTodoScheduleResult.scheduledTodos.length})</Text>
+                      {aiTodoScheduleResult.scheduledTodos.map((todo) => (
+                        <View key={todo.todo_id} style={styles.aiTodoScheduledItem}>
+                          <Text style={styles.aiTodoScheduledText}>{todo.text}</Text>
+                          <Text style={styles.aiTodoScheduledTime}>
+                            {new Date(todo.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(todo.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Text>
+                        </View>
+                      ))}
+                    </>
+                  )}
 
-            {/* Todos list */}
-            <ScrollView style={styles.aiTodoScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.sectionSubtitle}>Your To-Do Items ({todoItems.length})</Text>
-              {todoItems.length === 0 ? (
-                <Text style={styles.aiEmptyStateText}>No to-do items yet. Add one to get started!</Text>
-              ) : (
-                todoItems.map((todo) => {
-                  const isSelected = aiSelectedTodoIds.has(todo.id);
-                  return (
+                  {/* Unscheduled todos */}
+                  {aiTodoScheduleResult.unscheduledTodos.length > 0 && (
+                    <>
+                      <Text style={[styles.sectionSubtitle, { color: '#FF6B6B', marginTop: 16 }]}>
+                        Couldn't Schedule ({aiTodoScheduleResult.unscheduledTodos.length})
+                      </Text>
+                      {aiTodoScheduleResult.unscheduledTodos.map((todo) => (
+                        <View key={todo.todo_id} style={styles.aiTodoUnscheduledItem}>
+                          <Text style={styles.aiTodoUnscheduledText}>{todo.text}</Text>
+                          <Text style={styles.aiTodoUnscheduledReason}>{todo.reason}</Text>
+                          {todo.suggested_alternative && (
+                            <Text style={styles.aiTodoUnscheduledSuggestion}>Tip: {todo.suggested_alternative}</Text>
+                          )}
+                        </View>
+                      ))}
+                    </>
+                  )}
+
+                  {/* Warnings */}
+                  {aiTodoScheduleResult.warnings.length > 0 && (
+                    <>
+                      <Text style={[styles.sectionSubtitle, { marginTop: 16 }]}>Warnings</Text>
+                      {aiTodoScheduleResult.warnings.map((warning, index) => (
+                        <Text key={index} style={styles.aiTodoWarningMessage}>{warning.message}</Text>
+                      ))}
+                    </>
+                  )}
+                </ScrollView>
+
+                {/* Action buttons for results */}
+                <View style={styles.aiTodoFooter}>
+                  {aiTodoScheduleResult.requiresReranking ? (
+                    <View style={styles.aiTodoResultButtonsRow}>
+                      <TouchableOpacity
+                        style={styles.aiTodoResultButtonSecondary}
+                        onPress={handleReorderAndRetry}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.aiTodoResultButtonSecondaryText}>Reorder & Retry</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.aiTodoResultButtonPrimary}
+                        onPress={handleAcceptPartialSchedule}
+                        activeOpacity={0.7}
+                      >
+                        <LinearGradient
+                          colors={['#FF9D00', '#FFB84D']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.aiTodoButtonGradient}
+                        >
+                          <Text style={styles.aiTodoButtonText}>Accept</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
                     <TouchableOpacity
-                      key={todo.id}
-                      style={styles.aiTodoItem}
+                      style={styles.aiTodoButton}
                       onPress={() => {
-                        setAiSelectedTodoIds(prev => {
-                          const newSet = new Set(prev);
-                          if (newSet.has(todo.id)) {
-                            newSet.delete(todo.id);
-                          } else {
-                            newSet.add(todo.id);
-                          }
-                          return newSet;
-                        });
+                        setShowAITodoModal(false);
+                        setAiTodoScheduleResult(null);
+                        loadCalendarEvents();
+                        loadTodoItems();
                       }}
                       activeOpacity={0.7}
                     >
-                      <View style={styles.aiTodoItemContent}>
-                        <View>
-                          <Image
-                            source={require('../../assets/to_do.png')}
-                            style={styles.checkbox}
-                            resizeMode="contain"
-                          />
-                          {isSelected && (
-                            <Image
-                              source={require('../../assets/check.png')}
-                              style={styles.checkmark}
-                              resizeMode="contain"
-                            />
-                          )}
-                        </View>
-                        <Text style={[styles.aiTodoText, todo.completed && styles.aiTodoTextCompleted]}>
-                          {todo.text}
-                        </Text>
-                      </View>
+                      <LinearGradient
+                        colors={['#FF9D00', '#FFB84D']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.aiTodoButtonGradient}
+                      >
+                        <Text style={styles.aiTodoButtonText}>Done</Text>
+                      </LinearGradient>
                     </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
+                  )}
+                </View>
+              </>
+            ) : (
+              // Show scheduling view
+              <>
+                {/* Date selector */}
+                <View style={styles.aiTodoDateSelector}>
+                  <Text style={styles.aiTodoDateLabel}>Schedule for:</Text>
+                  <View style={styles.aiTodoDateButtonsRow}>
+                    <TouchableOpacity
+                      style={[styles.aiTodoDateButton, aiTodoSelectedDate === 'today' && styles.aiTodoDateButtonSelected]}
+                      onPress={() => setAiTodoSelectedDate('today')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.aiTodoDateButtonText, aiTodoSelectedDate === 'today' && styles.aiTodoDateButtonTextSelected]}>
+                        Today
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.aiTodoDateButton, aiTodoSelectedDate === 'tomorrow' && styles.aiTodoDateButtonSelected]}
+                      onPress={() => setAiTodoSelectedDate('tomorrow')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.aiTodoDateButtonText, aiTodoSelectedDate === 'tomorrow' && styles.aiTodoDateButtonTextSelected]}>
+                        Tomorrow
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
 
-            {/* Action buttons */}
-            <View style={styles.aiTodoFooter}>
-              <TouchableOpacity
-                style={[styles.aiTodoButton, aiSelectedTodoIds.size === 0 && styles.aiTodoButtonDisabled]}
-                onPress={() => {
-                  if (aiSelectedTodoIds.size > 0) {
-                    // Handle AI organization
-                    console.log(`Organizing ${aiSelectedTodoIds.size} todos for ${aiTodoSelectedDate}`);
-                    setShowAITodoModal(false);
-                  }
-                }}
-                activeOpacity={0.7}
-                disabled={aiSelectedTodoIds.size === 0}
-              >
-                <LinearGradient
-                  colors={['#FF9D00', '#FFB84D']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.aiTodoButtonGradient}
-                >
-                  <Text style={styles.aiTodoButtonText}>Smart Schedule</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
+                {/* AI info section */}
+                <View style={styles.aiTodoInfoSection}>
+                  <Text style={styles.aiTodoInfo}>
+                    Select todos and drag to prioritize. Top items get scheduled first. Set estimated duration for each.
+                  </Text>
+                </View>
+
+                {/* Todos list with priority ordering */}
+                <ScrollView style={styles.aiTodoScroll} showsVerticalScrollIndicator={false}>
+                  <Text style={styles.sectionSubtitle}>
+                    Your to do list ({aiSelectedTodoIds.size}) 
+                  </Text>
+                  {todoItems.length === 0 ? (
+                    <Text style={styles.aiEmptyStateText}>No to-do items yet. Add one to get started!</Text>
+                  ) : (
+                    aiTodoOrder.map((todoId, index) => {
+                      const todo = todoItems.find(t => t.id === todoId);
+                      if (!todo) return null;
+                      const isSelected = aiSelectedTodoIds.has(todo.id);
+                      const duration = aiTodoDurations.get(todo.id) || 30;
+
+                      return (
+                        <View key={todo.id} style={styles.aiTodoItemRow}>
+                          {/* Todo item with box background */}
+                          <View style={styles.aiTodoBoxContainer}>
+                            <Image
+                              source={require('../../assets/box.png')}
+                              style={styles.aiTodoBoxBackground}
+                              resizeMode="stretch"
+                            />
+                            <View style={styles.aiTodoBoxContent}>
+                              {/* Priority rank number inside box */}
+                              <Text style={styles.aiTodoRankNumber}>{index + 1}</Text>
+
+                              {/* Selection checkbox and text */}
+                              <TouchableOpacity
+                                style={styles.aiTodoItemContent}
+                                onPress={() => {
+                                  setAiSelectedTodoIds(prev => {
+                                    const newSet = new Set(prev);
+                                    if (newSet.has(todo.id)) {
+                                      newSet.delete(todo.id);
+                                    } else {
+                                      newSet.add(todo.id);
+                                    }
+                                    return newSet;
+                                  });
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                <View>
+                                  <Image
+                                    source={require('../../assets/to_do.png')}
+                                    style={styles.checkbox}
+                                    resizeMode="contain"
+                                  />
+                                  {isSelected && (
+                                    <Image
+                                      source={require('../../assets/check.png')}
+                                      style={styles.checkmark}
+                                      resizeMode="contain"
+                                    />
+                                  )}
+                                </View>
+                                <Text style={[styles.aiTodoItemText, todo.completed && styles.aiTodoTextCompleted, !isSelected && styles.aiTodoTextUnselected]} numberOfLines={2}>
+                                  {todo.text}
+                                </Text>
+                              </TouchableOpacity>
+
+                              {/* Duration selector */}
+                              <View style={styles.aiTodoDurationSelector}>
+                                <TouchableOpacity
+                                  onPress={() => updateTodoDuration(todo.id, Math.max(15, duration - 15))}
+                                  style={styles.aiTodoDurationButtonTransparent}
+                                >
+                                  <Text style={styles.aiTodoDurationButtonTextWhite}>-</Text>
+                                </TouchableOpacity>
+                                <Text style={styles.aiTodoDurationTextWhite}>{duration}m</Text>
+                                <TouchableOpacity
+                                  onPress={() => updateTodoDuration(todo.id, Math.min(180, duration + 15))}
+                                  style={styles.aiTodoDurationButtonTransparent}
+                                >
+                                  <Text style={styles.aiTodoDurationButtonTextWhite}>+</Text>
+                                </TouchableOpacity>
+                              </View>
+
+                              {/* Reorder buttons with arrow.png - inside the box */}
+                              <View style={styles.aiTodoArrowButtons}>
+                                <TouchableOpacity
+                                  onPress={() => moveTodoUp(todo.id)}
+                                  style={[styles.aiTodoArrowButton, index === 0 && styles.aiTodoArrowButtonDisabled]}
+                                  disabled={index === 0}
+                                  activeOpacity={0.7}
+                                >
+                                  <Image
+                                    source={require('../../assets/arrow.png')}
+                                    style={{ width: 12, height: 12, transform: [{ rotate: '180deg' }], tintColor: '#4D5AEE' }}
+                                    resizeMode="contain"
+                                  />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() => moveTodoDown(todo.id)}
+                                  style={[styles.aiTodoArrowButton, index === aiTodoOrder.length - 1 && styles.aiTodoArrowButtonDisabled]}
+                                  disabled={index === aiTodoOrder.length - 1}
+                                  activeOpacity={0.7}
+                                >
+                                  <Image
+                                    source={require('../../assets/arrow.png')}
+                                    style={{ width: 12, height: 12, transform: [{ rotate: '0deg' }], tintColor: '#4D5AEE' }}
+                                    resizeMode="contain"
+                                  />
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+                </ScrollView>
+
+                {/* Action buttons */}
+                <View style={styles.aiTodoFooter}>
+                  <TouchableOpacity
+                    style={[styles.aiTodoButton, (aiSelectedTodoIds.size === 0 || aiTodoScheduleLoading) && styles.aiTodoButtonDisabled]}
+                    onPress={handleAITodoSchedule}
+                    activeOpacity={0.7}
+                    disabled={aiSelectedTodoIds.size === 0 || aiTodoScheduleLoading}
+                  >
+                    <LinearGradient
+                      colors={aiWeeklyScheduleLoading ? ['#CCCCCC', '#999999'] : ['#4D5AEE', '#8B7FFF']}
+                      
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.aiTodoButtonGradient}
+                    >
+                      {aiTodoScheduleLoading ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.aiTodoButtonText}>Smart Schedule</Text>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -2789,11 +3154,11 @@ export const PageTwo: React.FC<PageTwoProps> = ({ podcastScheduleData, workoutSc
               </LinearGradient>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.aiSelectionButton}
               onPress={() => {
                 setShowAISelectionModal(false);
-                setTimeout(() => setShowAITodoModal(true), 300);
+                setTimeout(() => openAITodoModal(), 300);
               }}
               activeOpacity={0.7}
             >
@@ -2917,7 +3282,7 @@ const styles = StyleSheet.create({
   addBackground: {
     left: 0,
     right: 'auto',
-    backgroundColor: '#4D5AEE',
+    backgroundColor: '#FF9D00',
   },
   addBackgroundText: {
     color: '#FFFFFF',
@@ -3418,7 +3783,7 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     maxHeight: '80%',
     borderRadius: 25,
-    backgroundColor: 'rgba(77, 90, 238, 0.70)',
+    backgroundColor: '#4D5AEE',
     padding: 20,
     position: 'relative',
   },
@@ -3674,7 +4039,7 @@ const styles = StyleSheet.create({
   // AI Weekly Goals Modal Styles
   aiWeeklyGoalsContainer: {
     flex: 1,
-    backgroundColor: 'rgba(77, 90, 238, 0.70)',
+    backgroundColor: '#4D5AEE',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     marginTop: 40,
@@ -3726,6 +4091,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Margarine',
     fontWeight: '400',
     color: '#4D5AEE',
+    marginBottom: 12,
+  },
+  sectionSubtitle1: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '400',
+    color: '#FF9D00',
     marginBottom: 12,
   },
   aiEmptyStateText: {
@@ -3782,12 +4154,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 24,
     borderRadius: 6,
-    backgroundColor: '#E8E8FF',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
   reorderButtonDisabled: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: 'transparent',
+    opacity: 0.3,
   },
   reorderButtonText: {
     fontSize: 12,
@@ -3938,7 +4311,7 @@ const styles = StyleSheet.create({
   // AI Todo Modal Styles
   aiTodoContainer: {
     flex: 1,
-    backgroundColor: 'rgba(255, 157, 0, 0.70)',
+    backgroundColor: '#FF9D00',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     marginTop: 40,
@@ -4084,6 +4457,228 @@ const styles = StyleSheet.create({
     color: '#999',
     textDecorationLine: 'line-through',
   },
+  aiTodoTextUnselected: {
+    color: '#999',
+  },
+  aiTodoItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  aiTodoRankNumber: {
+    fontSize: 18,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
+    color: '#4D5AEE',
+    width: 24,
+    textAlign: 'center',
+    marginRight: 8,
+  },
+  aiTodoBoxContainer: {
+    flex: 1,
+    position: 'relative',
+    minHeight: 60,
+  },
+  aiTodoBoxBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    tintColor: '#4D5AEE',
+  },
+  aiTodoBoxContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 60,
+  },
+  aiTodoItemText: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: 'Margarine',
+    color: '#FFFFFF',
+    fontWeight: '400',
+    marginLeft: 10,
+  },
+  aiTodoDurationSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  aiTodoDurationButton: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#E8E8E8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiTodoDurationButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#666',
+  },
+  aiTodoDurationText: {
+    fontSize: 13,
+    fontFamily: 'Margarine',
+    color: '#666',
+    marginHorizontal: 6,
+    minWidth: 35,
+    textAlign: 'center',
+  },
+  aiTodoDurationButtonTransparent: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiTodoDurationButtonTextWhite: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  aiTodoDurationTextWhite: {
+    fontSize: 13,
+    fontFamily: 'Margarine',
+    color: '#FFFFFF',
+    marginHorizontal: 6,
+    minWidth: 35,
+    textAlign: 'center',
+  },
+  aiTodoArrowButtons: {
+    flexDirection: 'column',
+    marginLeft: 4,
+  },
+  aiTodoArrowButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'transparent',
+  },
+  aiTodoArrowButtonDisabled: {
+    opacity: 0.3,
+  },
+  aiTodoWarningBox: {
+    backgroundColor: '#FFF3CD',
+    borderRadius: 10,
+    padding: 14,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FFC107',
+  },
+  aiTodoWarningTitle: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
+    color: '#856404',
+    marginBottom: 6,
+  },
+  aiTodoWarningText: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#856404',
+    lineHeight: 20,
+  },
+  aiTodoWarningMessage: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#856404',
+    backgroundColor: '#FFF3CD',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  aiTodoSuccessBox: {
+    backgroundColor: '#D4EDDA',
+    borderRadius: 10,
+    padding: 14,
+    borderLeftWidth: 4,
+    borderLeftColor: '#28A745',
+  },
+  aiTodoSuccessTitle: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '600',
+    color: '#155724',
+    marginBottom: 6,
+  },
+  aiTodoSuccessText: {
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#155724',
+  },
+  aiTodoScheduledItem: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  aiTodoScheduledText: {
+    fontSize: 15,
+    fontFamily: 'Margarine',
+    color: '#2E7D32',
+    marginBottom: 4,
+  },
+  aiTodoScheduledTime: {
+    fontSize: 13,
+    fontFamily: 'Margarine',
+    color: '#4CAF50',
+  },
+  aiTodoUnscheduledItem: {
+    backgroundColor: '#FFEBEE',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  aiTodoUnscheduledText: {
+    fontSize: 15,
+    fontFamily: 'Margarine',
+    color: '#C62828',
+    marginBottom: 4,
+  },
+  aiTodoUnscheduledReason: {
+    fontSize: 13,
+    fontFamily: 'Margarine',
+    color: '#E57373',
+    marginBottom: 2,
+  },
+  aiTodoUnscheduledSuggestion: {
+    fontSize: 12,
+    fontFamily: 'Margarine',
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  aiTodoResultButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  aiTodoResultButtonSecondary: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FF9D00',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiTodoResultButtonSecondaryText: {
+    fontSize: 16,
+    fontFamily: 'Margarine',
+    fontWeight: '400',
+    color: '#FF9D00',
+  },
+  aiTodoResultButtonPrimary: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
   aiTodoActions: {
     flexDirection: 'row',
     gap: 8,
@@ -4181,5 +4776,36 @@ const styles = StyleSheet.create({
     color: '#999',
     fontWeight: '300',
   },
+  aiGoalItemRow: {
+  marginBottom: 12,
+},
+
+aiGoalBoxContainer: {
+  position: 'relative',
+  width: '100%',
+  minHeight: 64,
+  justifyContent: 'center',
+},
+
+aiGoalBoxBackground: {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: '100%',
+  height: '100%',
+  // IMPORTANT: do NOT set opacity here or you’ll fade the border too
+},
+
+aiGoalBoxContent: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingVertical: 12,
+  paddingHorizontal: 14,
+  // transparent inside (default)
+  backgroundColor: 'transparent',
+},
+
 });
 

@@ -193,3 +193,56 @@ class PodcastScheduleResponse(BaseModel):
     reasoning: str
     warnings: List[ScheduleWarning] = []
     generatedAt: datetime
+
+
+# Todo-specific scheduling schemas
+class TodoItem(BaseModel):
+    """A todo item to be scheduled."""
+    id: str
+    text: str
+    priority: int = Field(default=5, ge=1, le=10)  # 1 = highest priority, 10 = lowest
+    estimated_duration_minutes: Optional[int] = 30  # Default 30 min if not specified
+    is_selected: bool = True  # Whether user marked this as must-do
+
+
+class TodoScheduleRequest(BaseModel):
+    """Request to schedule todo items for a specific day."""
+    targetDate: date  # The day to schedule todos (today or tomorrow)
+    todos: List[TodoItem]  # List of todos with priorities
+    email: Optional[str] = None  # Email to identify the user
+
+
+class ScheduledTodo(BaseModel):
+    """A successfully scheduled todo item."""
+    todo_id: str
+    text: str
+    start_time: str  # ISO format datetime
+    end_time: str  # ISO format datetime
+    calendar_event_id: Optional[str] = None  # Google Calendar event ID after creation
+    priority: int
+    scheduled_successfully: bool = True
+
+
+class UnscheduledTodo(BaseModel):
+    """A todo item that couldn't be scheduled."""
+    todo_id: str
+    text: str
+    priority: int
+    reason: str  # Why it couldn't be scheduled
+    suggested_alternative: Optional[str] = None  # e.g., "Try scheduling for tomorrow"
+
+
+class TodoScheduleResponse(BaseModel):
+    """Response from todo scheduling."""
+    success: bool
+    targetDate: date
+    scheduledTodos: List[ScheduledTodo]
+    unscheduledTodos: List[UnscheduledTodo]
+    scheduledCount: int
+    unscheduledCount: int
+    totalAvailableMinutes: int  # Total free time available
+    totalRequestedMinutes: int  # Total time needed for all todos
+    requiresReranking: bool  # True if user needs to re-prioritize
+    reasoning: str  # AI explanation
+    warnings: List[ScheduleWarning] = []
+    generatedAt: datetime

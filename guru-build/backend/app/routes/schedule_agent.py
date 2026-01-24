@@ -16,10 +16,13 @@ from app.schemas.schedule import (
     WorkoutScheduleResponse,
     PodcastScheduleRequest,
     PodcastScheduleResponse,
+    TodoScheduleRequest,
+    TodoScheduleResponse,
 )
 from app.services.scheduling_agent_service import SchedulingAgentService
 from app.services.workout_scheduler_service import WorkoutSchedulerService
 from app.services.podcast_scheduler_service import PodcastSchedulerService
+from app.services.todo_scheduler_service import TodoSchedulerService
 from app.models.user import User
 from app.services.auth_service import get_current_user
 
@@ -207,4 +210,45 @@ async def schedule_podcast(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to schedule podcast: {str(e)}",
+        )
+
+
+@router.post("/todos/schedule", response_model=TodoScheduleResponse)
+async def schedule_todos(
+    request: TodoScheduleRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Schedule todo items for a specific day using AI.
+
+    This endpoint:
+    - Analyzes the user's calendar for the target day
+    - Respects sleep time and wake time from preferences
+    - Schedules todos in priority order into available time slots
+    - Never overlaps with existing calendar events (especially high-priority ones)
+    - Returns warnings if todos cannot be scheduled
+    - Prompts user to re-rank priorities if not all todos fit
+    - Creates calendar events for scheduled todos
+    """
+    # If email is provided in request, look up that specific user
+    user = current_user
+    if request.email:
+        found_user = db.query(User).filter(User.email == request.email).first()
+        if found_user:
+            user = found_user
+        else:
+            # If user not found by email, create one
+            from app.routes.preferences import get_or_create_user
+            user = get_or_create_user(db, request.email)
+
+    service = TodoSchedulerService(db, user)
+
+    try:
+        result = await service.schedule_todos(request)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to schedule todos: {str(e)}",
         )

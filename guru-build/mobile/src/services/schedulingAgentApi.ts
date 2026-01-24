@@ -150,6 +150,54 @@ export interface PodcastScheduleResponse {
   generatedAt: string;
 }
 
+// Todo-specific scheduling types
+export interface TodoItemRequest {
+  id: string;
+  text: string;
+  priority: number; // 1 = highest priority, 10 = lowest
+  estimated_duration_minutes?: number; // Default 30 min
+  is_selected: boolean;
+}
+
+export interface TodoScheduleRequest {
+  targetDate: string; // ISO date (YYYY-MM-DD)
+  todos: TodoItemRequest[];
+  email?: string | null;
+}
+
+export interface ScheduledTodo {
+  todo_id: string;
+  text: string;
+  start_time: string;
+  end_time: string;
+  calendar_event_id?: string;
+  priority: number;
+  scheduled_successfully: boolean;
+}
+
+export interface UnscheduledTodo {
+  todo_id: string;
+  text: string;
+  priority: number;
+  reason: string;
+  suggested_alternative?: string;
+}
+
+export interface TodoScheduleResponse {
+  success: boolean;
+  targetDate: string;
+  scheduledTodos: ScheduledTodo[];
+  unscheduledTodos: UnscheduledTodo[];
+  scheduledCount: number;
+  unscheduledCount: number;
+  totalAvailableMinutes: number;
+  totalRequestedMinutes: number;
+  requiresReranking: boolean;
+  reasoning: string;
+  warnings: ScheduleWarning[];
+  generatedAt: string;
+}
+
 class SchedulingAgentApiService {
   /**
    * Get the start of the current week (Monday)
@@ -347,6 +395,48 @@ class SchedulingAgentApiService {
 
     const data = await response.json();
     console.log('Podcast scheduled successfully:', data);
+    return data;
+  }
+
+  /**
+   * Schedule todo items for a specific day using AI
+   * - Analyzes the user's calendar for the target day
+   * - Respects sleep time and wake time from preferences
+   * - Schedules todos in priority order into available time slots
+   * - Never overlaps with existing calendar events
+   * - Returns warnings if todos cannot be scheduled
+   * - Prompts user to re-rank priorities if not all todos fit
+   */
+  async scheduleTodos(
+    request: TodoScheduleRequest
+  ): Promise<TodoScheduleResponse> {
+    // Get user email to ensure backend uses the correct user record
+    const user = await GoogleAuthService.getStoredUser();
+
+    const payload = {
+      targetDate: request.targetDate,
+      todos: request.todos,
+      email: request.email || user?.email || null,
+    };
+
+    console.log('Scheduling todos with payload:', payload);
+
+    const response = await fetch(`${API_URL}/api/v1/schedule/agent/todos/schedule`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Todo scheduling failed:', errorText);
+      throw new Error(`Failed to schedule todos: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('Todos scheduled successfully:', data);
     return data;
   }
 }

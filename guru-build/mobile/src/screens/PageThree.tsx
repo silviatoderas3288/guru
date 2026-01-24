@@ -397,6 +397,17 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     }
   };
 
+  // Debounced search effect
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (searchQuery.trim()) {
+        handleSearch();
+      }
+    }, 2000); // Wait 2 seconds after typing stops
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
   const clearSearch = () => {
     setSearchQuery('');
     setSearchResults([]);
@@ -815,11 +826,6 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                 </TouchableOpacity>
               )}
             </View>
-            {searchQuery.length > 0 && (
-              <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-                <Text style={styles.searchButtonText}>Search</Text>
-              </TouchableOpacity>
-            )}
           </View>
 
           {/* Search Results Section */}
@@ -828,7 +834,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
               <Text style={styles.sectionTitle}>Search Results</Text>
               <Image
                 source={require('../../assets/under_pref.png')}
-                style={styles.sectionUnderline}
+                style={styles.sectionUnderlineOrange}
                 resizeMode="contain"
               />
               {isSearching ? (
