@@ -981,14 +981,6 @@ export const SettingsScreen: React.FC = () => {
                 onEndTimeChange={(time) => updatePreference('focusTimeEnd', [time])}
                 labelColor="#4D5AEE"
               />
-              <PreferenceDropdown
-                label="Blocked Apps"
-                options={['Instagram', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'Snapchat', 'Reddit', 'Netflix']}
-                selectedOptions={preferences.blockedApps}
-                onSelectionChange={(selected) => updatePreference('blockedApps', selected)}
-                multiSelect={true}
-                labelColor="#4D5AEE"
-              />
             </CollapsibleSection>
 
             {/* Meal Preferences */}

@@ -844,13 +844,6 @@ export const SettingsModal: React.FC = () => {
                 onStartTimeChange={(time) => updatePreference('focusTimeStart', [time])}
                 onEndTimeChange={(time) => updatePreference('focusTimeEnd', [time])}
               />
-              <PreferenceDropdown
-                label="Blocked Apps"
-                options={['Instagram', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'Snapchat', 'Reddit', 'Netflix']}
-                selectedOptions={preferences.blockedApps}
-                onSelectionChange={(selected) => updatePreference('blockedApps', selected)}
-                multiSelect={true}
-              />
             </View>
 
             {/* Meal Preferences */}

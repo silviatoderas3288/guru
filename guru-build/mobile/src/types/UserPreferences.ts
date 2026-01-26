@@ -13,7 +13,6 @@ export interface UserPreferences {
   sleepHours: string[];
   focusTimeStart: string[];
   focusTimeEnd: string[];
-  blockedApps: string[];
   commuteStartTime: string[];
   commuteEndTime: string[];
   commuteMethod: string[];

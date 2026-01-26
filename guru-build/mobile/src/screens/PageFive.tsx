@@ -43,7 +43,6 @@ interface UserPreferences {
   bedTime: string[];
   focusTimeStart: string[];
   focusTimeEnd: string[];
-  blockedApps: string[];
   commuteStart: string[];
   commuteEnd: string[];
   commuteDuration: string[];
@@ -69,7 +68,7 @@ const TimeRangeDropdown: React.FC<TimeRangeDropdownProps> = ({
   endTime,
   onStartTimeChange,
   onEndTimeChange,
-  startOptions = ['08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM'],
+  startOptions = ['08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM'],
   endOptions = ['11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM'],
   labelColor = '#4D5AEE'
 }) => {
@@ -1071,7 +1070,7 @@ const listInputStyles = StyleSheet.create({
 export const PageFive: React.FC = () => {
   const { toggleSettingsModal, preferences, updatePreference, fetchPreferences, loading } = usePreferencesStore();
   const [user, setUser] = useState<GoogleUser | null>(null);
-  
+
   // AI Schedule Modal states
   const [showAIScheduleModal, setShowAIScheduleModal] = useState(false);
   const [aiScheduleLoading, setAiScheduleLoading] = useState(false);
@@ -1609,8 +1608,8 @@ export const PageFive: React.FC = () => {
             */}
           </CollapsibleSection>
 
-          {/* Focus Time (App Blocking) */}
-          <CollapsibleSection title="Focus Time (App Blocking)" transparent={true}>
+          {/* Focus Time */}
+          <CollapsibleSection title="Focus Time" transparent={true}>
             <TimeRangeDropdown
               label="Focus Time"
               startTime={preferences.focusTimeStart[0] || ''}
@@ -1618,16 +1617,6 @@ export const PageFive: React.FC = () => {
               onStartTimeChange={(time) => updatePreference('focusTimeStart', [time])}
               onEndTimeChange={(time) => updatePreference('focusTimeEnd', [time])}
               labelColor="#4D5AEE"
-            />
-            <PreferenceDropdown
-              label="Blocked Apps"
-              options={['Instagram', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'Snapchat', 'Reddit', 'Netflix', 'News', 'WhatsApp', 'Messenger', 'LinkedIn', 'Pinterest', 'Twitch', 'Discord']}
-              selectedOptions={preferences.blockedApps}
-              onSelectionChange={(selected) => updatePreference('blockedApps', selected)}
-              multiSelect={true}
-              labelColor="#4D5AEE"
-              allowCustom={true}
-              customPlaceholder="Add app name..."
             />
           </CollapsibleSection>
 
