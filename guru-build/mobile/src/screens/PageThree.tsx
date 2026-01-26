@@ -1222,7 +1222,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                           <Ionicons
                             name={isPodcastSaved(podcast.id) ? "heart" : "heart-outline"}
                             size={18}
-                            color="#FFF"
+                            color="#FF9D00"
                           />
                         </TouchableOpacity>
                       </ImageBackground>
@@ -1317,7 +1317,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                         <Ionicons
                           name="heart-outline"
                           size={18}
-                          color="#FFF"
+                          color="#FF9D00"
                         />
                       </TouchableOpacity>
                     </ImageBackground>
@@ -1376,7 +1376,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                           <Ionicons
                             name="heart"
                             size={18}
-                            color="#FFF"
+                            color="#FF9D00"
                           />
                         </TouchableOpacity>
                       </ImageBackground>
@@ -1445,7 +1445,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                       <Ionicons
                         name={isPodcastSaved(podcast.id) ? "heart" : "heart-outline"}
                         size={18}
-                        color="#FFF"
+                        color="#FF9D00"
                       />
                     </TouchableOpacity>
                   </ImageBackground>
@@ -1455,7 +1455,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
             </ScrollView>
           </View>
 
-         
+
 
       {/* Main Podcast Modal */}
       <Modal
