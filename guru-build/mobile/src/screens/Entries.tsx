@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ImageBackground, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
+import { usePreferencesStore } from '../store/usePreferencesStore';
 
 interface Entry {
   id: string;
@@ -45,6 +46,8 @@ export const Entries: React.FC<EntriesProps> = ({
   onAddEntry,
   onBack
 }) => {
+  const { toggleSettingsModal } = usePreferencesStore();
+
   const formatTimestamp = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -81,7 +84,7 @@ export const Entries: React.FC<EntriesProps> = ({
             resizeMode="contain"
           />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.settingsButtonWrapper}>
+        <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
           <LinearGradient
             colors={['#FF9D00', '#4D5AEE']}
             start={{ x: 0, y: 0 }}

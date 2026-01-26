@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ImageBackground, TextInput, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
+import { usePreferencesStore } from '../store/usePreferencesStore';
 
 interface EntryDetailProps {
   entryId: string;
@@ -24,6 +25,7 @@ const SettingsIcon = () => (
 
 export const EntryDetail: React.FC<EntryDetailProps> = ({ entryId, timestamp, notes: initialNotes = '', onSave, onBack }) => {
   const [notes, setNotes] = useState(initialNotes);
+  const { toggleSettingsModal } = usePreferencesStore();
 
   const formatTimestamp = (date: Date) => {
     const year = date.getFullYear();
@@ -59,7 +61,7 @@ export const EntryDetail: React.FC<EntryDetailProps> = ({ entryId, timestamp, no
             resizeMode="contain"
           />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.settingsButtonWrapper}>
+        <TouchableOpacity style={styles.settingsButtonWrapper} onPress={() => toggleSettingsModal(true)}>
           <LinearGradient
             colors={['#FF9D00', '#4D5AEE']}
             start={{ x: 0, y: 0 }}

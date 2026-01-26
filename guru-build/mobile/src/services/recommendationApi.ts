@@ -337,8 +337,8 @@ class RecommendationApiService {
       });
 
       return response.ok;
-    } catch (error) {
-      console.error('Error recording interaction:', error);
+    } catch {
+      // Silently fail - interaction tracking is non-critical
       return false;
     }
   }
