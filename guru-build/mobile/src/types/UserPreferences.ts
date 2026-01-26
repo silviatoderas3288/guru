@@ -1,6 +1,7 @@
 export interface UserPreferences {
   podcastTopics: string[];
   podcastLength: string[];
+  podcastLanguages: string[];
   notifications: string[];
   workoutTypes: string[];
   workoutDuration: string[];

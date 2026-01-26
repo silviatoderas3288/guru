@@ -16,6 +16,7 @@ class UserPreference(BaseModel):
     # Podcast preferences
     podcast_topics = Column(ARRAY(String))  # Multiple topics
     podcast_length = Column(String)  # Single selection
+    podcast_languages = Column(ARRAY(String))  # Multiple languages (e.g. ['en', 'es'])
     notifications = Column(String)  # Single selection
 
     # Workout preferences

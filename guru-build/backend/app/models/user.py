@@ -39,5 +39,10 @@ class User(BaseModel):
     saved_podcasts = relationship("SavedPodcast", back_populates="user", cascade="all, delete-orphan")
     saved_episodes = relationship("SavedEpisode", back_populates="user", cascade="all, delete-orphan")
 
+    # Podcast recommendation ML relationships
+    listening_sessions = relationship("ListeningSession", back_populates="user", cascade="all, delete-orphan")
+    podcast_interactions = relationship("PodcastInteraction", back_populates="user", cascade="all, delete-orphan")
+    podcast_profile = relationship("UserPodcastProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email})>"

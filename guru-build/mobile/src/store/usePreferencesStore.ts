@@ -22,6 +22,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
   preferences: {
     podcastTopics: [],
     podcastLength: [],
+    podcastLanguages: ['en'],
     notifications: [],
     workoutTypes: [],
     workoutDuration: [],
@@ -78,6 +79,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
           preferences: {
             podcastTopics: data.podcast_topics || [],
             podcastLength: data.podcast_length ? [data.podcast_length] : [],
+            podcastLanguages: data.podcast_languages || ['en'],
             notifications: data.notifications ? [data.notifications] : [],
             workoutTypes: data.workout_types || [],
             workoutDuration: data.workout_duration ? [data.workout_duration] : [],
@@ -126,6 +128,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
           email: storedUser.email,
           podcast_topics: preferences.podcastTopics,
           podcast_length: preferences.podcastLength[0] || null,
+          podcast_languages: preferences.podcastLanguages.length > 0 ? preferences.podcastLanguages : ['en'],
           notifications: preferences.notifications[0] || null,
           workout_types: preferences.workoutTypes,
           workout_duration: preferences.workoutDuration[0] || null,

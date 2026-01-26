@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { PodcastApiService, Podcast as ApiPodcast, PodcastEpisode as ApiEpisode } from '../services/podcastApi';
+import { recommendationApi, PodcastRecommendation } from '../services/recommendationApi';
 import { usePreferencesStore } from '../store/usePreferencesStore';
 import schedulingAgentApi, { PodcastScheduleResponse, ScheduledPodcastEpisode } from '../services/schedulingAgentApi';
 import { CalendarApiService } from '../services/calendarApi';
@@ -113,7 +114,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   const [showScheduleOptionsModal, setShowScheduleOptionsModal] = useState(false);
   const [selectedPodcast, setSelectedPodcast] = useState<Podcast | null>(null);
   const [loading, setLoading] = useState(true);
-  const { toggleSettingsModal } = usePreferencesStore();
+  const { toggleSettingsModal, preferences } = usePreferencesStore();
   const [showDatePicker, setShowDatePicker] = useState(false);
 
 
@@ -141,7 +142,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   const [currentFavorites, setCurrentFavorites] = useState<Podcast[]>([]);
   const [recentEpisodes, setRecentEpisodes] = useState<Episode[]>([]);
   const [recommendations, setRecommendations] = useState<Podcast[]>([]);
-  const [allTrending, setAllTrending] = useState<Podcast[]>([]);
+  // allTrending state removed - now using ML recommendations API for replacements
   const [savedPodcasts, setSavedPodcasts] = useState<Podcast[]>([]);
 
   // Search state
@@ -169,7 +170,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
 
   useEffect(() => {
     loadPodcastData();
-  }, []);
+  }, [preferences.podcastLanguages]);
 
   const loadPodcastData = async () => {
     try {
@@ -241,22 +242,45 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       }));
       setRecentEpisodes(formattedEpisodes);
 
-      // Load recommendations (trending podcasts)
-      const trending = await PodcastApiService.getTrendingPodcasts(20);
-      const formattedAllTrending = trending.map((podcast: ApiPodcast) => ({
-        id: podcast.id,
-        title: podcast.name,
-        artist: podcast.author,
-        duration: `${Math.floor(Math.random() * 90) + 20} min`,
-        artwork: podcast.artwork || 'https://via.placeholder.com/300',
-        url: podcast.url,
-        website: podcast.website,
-      }));
-      setAllTrending(formattedAllTrending);
-      
-      const formattedRecommendations = formattedAllTrending.slice(0, 5);
-      
-      console.log('--- Recommended Podcasts ---');
+      // Load recommendations - try ML-powered first, fallback to trending
+      const selectedLanguages = preferences.podcastLanguages.length > 0 ? preferences.podcastLanguages : ['en'];
+
+      // Try to get ML-powered personalized recommendations
+      let formattedRecommendations: Podcast[] = [];
+      try {
+        const mlRecommendations = await recommendationApi.getRecommendations(5);
+        if (mlRecommendations && mlRecommendations.length > 0) {
+          formattedRecommendations = mlRecommendations.map((rec: PodcastRecommendation) => ({
+            id: rec.podcast_id,
+            title: rec.title || 'Unknown Podcast',
+            artist: rec.author || 'Unknown',
+            duration: `${Math.floor(Math.random() * 90) + 20} min`,
+            artwork: rec.artwork || 'https://via.placeholder.com/300',
+            url: '',
+            website: '',
+          }));
+          console.log('--- ML Recommendations Loaded ---');
+        }
+      } catch (mlError) {
+        console.log('ML recommendations not available, using trending fallback');
+      }
+
+      // Fallback to trending if ML recommendations are empty
+      if (formattedRecommendations.length === 0) {
+        const trending = await PodcastApiService.getTrendingPodcasts(20, undefined, selectedLanguages);
+        const formattedAllTrending = trending.map((podcast: ApiPodcast) => ({
+          id: podcast.id,
+          title: podcast.name,
+          artist: podcast.author,
+          duration: `${Math.floor(Math.random() * 90) + 20} min`,
+          artwork: podcast.artwork || 'https://via.placeholder.com/300',
+          url: podcast.url,
+          website: podcast.website,
+        }));
+        formattedRecommendations = formattedAllTrending.slice(0, 5);
+        console.log('--- Trending Podcasts (Fallback) ---');
+      }
+
       formattedRecommendations.forEach(p => {
         console.log(`Title: ${p.title}, Artwork: ${p.artwork}`);
       });
@@ -396,7 +420,8 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
 
     setIsSearching(true);
     try {
-      const results = await PodcastApiService.searchPodcasts(searchQuery, 10);
+      const selectedLanguages = preferences.podcastLanguages.length > 0 ? preferences.podcastLanguages : ['en'];
+      const results = await PodcastApiService.searchPodcasts(searchQuery, 10, selectedLanguages);
       const formatted = results.map((podcast: ApiPodcast) => ({
         id: podcast.id,
         title: podcast.name,
@@ -421,7 +446,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       if (searchQuery.trim()) {
         handleSearch();
       }
-    }, 2000); // Wait 2 seconds after typing stops
+    }, 500); // Wait 500ms after typing stops
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
@@ -448,6 +473,10 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
 
       if (response.ok) {
         await loadSavedPodcasts();
+        // Record save interaction for ML recommendations
+        recommendationApi.recordSave(podcast.id).catch(err =>
+          console.log('Failed to record save interaction:', err)
+        );
         Alert.alert('Saved', `"${podcast.title}" has been saved to your library.`);
       } else {
         const errorData = await response.text();
@@ -460,32 +489,47 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
     }
   };
 
-  const removeRecommendation = (podcast: Podcast) => {
+  const removeRecommendation = async (podcast: Podcast) => {
+    const removedId = podcast.id;
+
     // Add to disliked so it doesn't come back
     setDislikedPodcastIds(prev => {
         const newSet = new Set(prev);
-        newSet.add(podcast.id);
+        newSet.add(removedId);
         return newSet;
     });
 
-    setRecommendations(current => {
-        const filtered = current.filter(p => p.id !== podcast.id);
-        
-        const currentIds = new Set(filtered.map(p => p.id));
-        currentIds.add(podcast.id); 
+    // Remove immediately for responsive UI
+    setRecommendations(current => current.filter(p => p.id !== removedId));
 
-        // Find a replacement from allTrending
-        const replacement = allTrending.find(p => 
-            !currentIds.has(p.id) && 
-            !dislikedPodcastIds.has(p.id) &&
-            p.id !== podcast.id
-        );
+    // Record dislike and fetch fresh ML recommendations
+    try {
+      await recommendationApi.dislikePodcast(removedId);
 
-        if (replacement) {
-            return [...filtered, replacement];
+      // Fetch fresh recommendations
+      const freshRecs = await recommendationApi.getRecommendations(10);
+      if (freshRecs && freshRecs.length > 0) {
+        const formattedRecs = freshRecs
+          .filter((rec: PodcastRecommendation) =>
+            rec.podcast_id !== removedId && !dislikedPodcastIds.has(rec.podcast_id)
+          )
+          .slice(0, 5)
+          .map((rec: PodcastRecommendation) => ({
+            id: rec.podcast_id,
+            title: rec.title || 'Unknown Podcast',
+            artist: rec.author || 'Unknown',
+            duration: `${Math.floor(Math.random() * 90) + 20} min`,
+            artwork: rec.artwork || 'https://via.placeholder.com/300',
+            url: '',
+            website: '',
+          }));
+        if (formattedRecs.length > 0) {
+          setRecommendations(formattedRecs);
         }
-        return filtered;
-    });
+      }
+    } catch (err) {
+      console.log('Failed to record dislike or fetch recommendations:', err);
+    }
   };
 
   const handleRecommendationLongPress = (podcast: Podcast) => {
@@ -523,25 +567,64 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       newSet.delete(podcast.id);
       return newSet;
     });
+    // Record like interaction for ML recommendations
+    recommendationApi.likePodcast(podcast.id).catch(err =>
+      console.log('Failed to record like interaction:', err)
+    );
     setShowScheduleModal(false);
   };
 
-  // Dislike podcast (thumbs down) - remove from recommendations
-  const handleDislikePodcast = (podcast: Podcast) => {
+  // Dislike podcast (thumbs down) - remove from recommendations and fetch replacement
+  const handleDislikePodcast = async (podcast: Podcast) => {
+    // Track the disliked podcast ID for filtering
+    const dislikedId = podcast.id;
+
     setDislikedPodcastIds(prev => {
       const newSet = new Set(prev);
-      newSet.add(podcast.id);
+      newSet.add(dislikedId);
       return newSet;
     });
     // Remove from liked if it was there
     setLikedPodcastIds(prev => {
       const newSet = new Set(prev);
-      newSet.delete(podcast.id);
+      newSet.delete(dislikedId);
       return newSet;
     });
-    // Remove from recommendations
-    setRecommendations(prev => prev.filter(p => p.id !== podcast.id));
+
+    // Remove from recommendations immediately for responsive UI
+    setRecommendations(prev => prev.filter(p => p.id !== dislikedId));
     setShowScheduleModal(false);
+
+    // Record dislike interaction - this invalidates the cache on the backend
+    try {
+      await recommendationApi.dislikePodcast(dislikedId);
+
+      // Fetch more recommendations to replace the disliked one
+      // Request extra to account for filtering
+      const freshRecs = await recommendationApi.getRecommendations(10);
+      if (freshRecs && freshRecs.length > 0) {
+        // Filter out the just-disliked podcast and any previously disliked
+        const formattedRecs = freshRecs
+          .filter((rec: PodcastRecommendation) =>
+            rec.podcast_id !== dislikedId && !dislikedPodcastIds.has(rec.podcast_id)
+          )
+          .slice(0, 5)  // Take only 5 after filtering
+          .map((rec: PodcastRecommendation) => ({
+            id: rec.podcast_id,
+            title: rec.title || 'Unknown Podcast',
+            artist: rec.author || 'Unknown',
+            duration: `${Math.floor(Math.random() * 90) + 20} min`,
+            artwork: rec.artwork || 'https://via.placeholder.com/300',
+            url: '',
+            website: '',
+          }));
+        if (formattedRecs.length > 0) {
+          setRecommendations(formattedRecs);
+        }
+      }
+    } catch (err) {
+      console.log('Failed to record dislike or fetch new recommendations:', err);
+    }
   };
 
   // Check if podcast is liked
@@ -934,6 +1017,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
             </View>
           </View>
 
+
           {/* Search Results Section */}
           {searchResults.length > 0 && (
             <View style={styles.section}>
@@ -960,7 +1044,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                         tintColor={index % 2 === 0 ? '#4D5AEE' : '#FF9D00'}
                       >
                         <Image
-                          source={podcast.artwork && podcast.artwork !== 'https://via.placeholder.com/300'
+                          source={podcast.artwork && podcast.artwork.trim() !== '' && podcast.artwork !== 'https://via.placeholder.com/300'
                             ? { uri: podcast.artwork }
                             : require('../../assets/pod.png')}
                           style={styles.innerSquareImage}
@@ -1034,7 +1118,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                       tintColor={index % 2 === 0 ? '#FF3B30' : '#4D5AEE'}
                     >
                       <Image
-                        source={episode.artwork && episode.artwork !== 'https://via.placeholder.com/300'
+                        source={episode.artwork && episode.artwork.trim() !== '' && episode.artwork !== 'https://via.placeholder.com/300'
                           ? { uri: episode.artwork }
                           : require('../../assets/pod.png')}
                         style={styles.innerRectImage}

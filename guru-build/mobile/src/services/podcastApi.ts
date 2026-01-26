@@ -36,11 +36,13 @@ export interface PodcastEpisode {
 export class PodcastApiService {
   /**
    * Search for podcasts by term
+   * @param languages - Single language code or array of language codes (e.g., 'en' or ['en', 'es'])
    */
-  static async searchPodcasts(query: string, limit: number = 20): Promise<Podcast[]> {
+  static async searchPodcasts(query: string, limit: number = 20, languages: string | string[] = 'en'): Promise<Podcast[]> {
     try {
+      const langParam = Array.isArray(languages) ? languages.join(',') : languages;
       const response = await fetch(
-        `${API_BASE_URL}/api/v1/podcasts/search?q=${encodeURIComponent(query)}&limit=${limit}`
+        `${API_BASE_URL}/api/v1/podcasts/search?q=${encodeURIComponent(query)}&limit=${limit}&lang=${langParam}`
       );
 
       if (!response.ok) {
@@ -57,10 +59,12 @@ export class PodcastApiService {
 
   /**
    * Get trending podcasts
+   * @param languages - Single language code or array of language codes (e.g., 'en' or ['en', 'es'])
    */
-  static async getTrendingPodcasts(limit: number = 20, category?: string): Promise<Podcast[]> {
+  static async getTrendingPodcasts(limit: number = 20, category?: string, languages: string | string[] = 'en'): Promise<Podcast[]> {
     try {
-      let url = `${API_BASE_URL}/api/v1/podcasts/trending?limit=${limit}`;
+      const langParam = Array.isArray(languages) ? languages.join(',') : languages;
+      let url = `${API_BASE_URL}/api/v1/podcasts/trending?limit=${limit}&lang=${langParam}`;
       if (category) {
         url += `&category=${encodeURIComponent(category)}`;
       }
@@ -208,9 +212,9 @@ export class PodcastApiService {
     ];
 
     try {
-      // Search for a wellness-related term
+      // Search for a wellness-related term (English only)
       const randomTerm = wellnessSearchTerms[Math.floor(Math.random() * wellnessSearchTerms.length)];
-      return await this.searchPodcasts(randomTerm, 10);
+      return await this.searchPodcasts(randomTerm, 10, 'en');
     } catch (error) {
       console.error('Error fetching wellness podcasts:', error);
       return [];

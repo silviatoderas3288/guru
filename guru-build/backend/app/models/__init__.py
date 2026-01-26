@@ -18,6 +18,14 @@ from .schedule_agent import ScheduleSuggestion, TaskCompletionFeedback, Schedule
 from .journal_entry import JournalEntry
 from .list_item import ListItem
 from .saved_media import SavedPodcast, SavedEpisode
+from .podcast_recommendation import (
+    ListeningSession,
+    PodcastInteraction,
+    PodcastFeatures,
+    UserPodcastProfile,
+    RecommendationCache,
+    InteractionType,
+)
 
 __all__ = [
     "User",
@@ -41,4 +49,10 @@ __all__ = [
     "ListItem",
     "SavedPodcast",
     "SavedEpisode",
+    "ListeningSession",
+    "PodcastInteraction",
+    "PodcastFeatures",
+    "UserPodcastProfile",
+    "RecommendationCache",
+    "InteractionType",
 ]

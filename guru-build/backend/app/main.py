@@ -78,7 +78,7 @@ async def health_check():
 
 
 # Import and include routers
-from app.routes import calendar, bingo, journal, list_items, preferences, spotify, podcasts, workouts, schedule_agent, library
+from app.routes import calendar, bingo, journal, list_items, preferences, spotify, podcasts, workouts, schedule_agent, library, recommendations
 
 app.include_router(calendar.router, prefix="/api/v1/calendar", tags=["calendar"])
 app.include_router(bingo.router, prefix="/api/v1/bingo", tags=["bingo"])
@@ -90,6 +90,7 @@ app.include_router(podcasts.router, prefix="/api/v1/podcasts", tags=["podcasts"]
 app.include_router(workouts.router, prefix="/api/v1/workouts", tags=["workouts"])
 app.include_router(schedule_agent.router, prefix="/api/v1/schedule/agent", tags=["schedule-agent"])
 app.include_router(library.router, prefix="/api/v1/library", tags=["library"])
+app.include_router(recommendations.router, prefix="/api/v1/recommendations", tags=["recommendations"])
 
 # TODO: Add more routers as they are implemented
 # from app.routes import tasks, media, resolutions, settings

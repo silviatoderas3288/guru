@@ -1414,6 +1414,29 @@ export const PageFive: React.FC = () => {
               labelColor="#4D5AEE"
             />
             <PreferenceDropdown
+              label="Podcast Languages"
+              options={['English', 'Spanish', 'French', 'German', 'Portuguese', 'Italian', 'Japanese', 'Chinese', 'Korean', 'Hindi', 'Arabic', 'Russian']}
+              selectedOptions={preferences.podcastLanguages.map((code: string) => {
+                const languageMap: { [key: string]: string } = {
+                  'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German',
+                  'pt': 'Portuguese', 'it': 'Italian', 'ja': 'Japanese', 'zh': 'Chinese',
+                  'ko': 'Korean', 'hi': 'Hindi', 'ar': 'Arabic', 'ru': 'Russian'
+                };
+                return languageMap[code] || code;
+              })}
+              onSelectionChange={(selected) => {
+                const codeMap: { [key: string]: string } = {
+                  'English': 'en', 'Spanish': 'es', 'French': 'fr', 'German': 'de',
+                  'Portuguese': 'pt', 'Italian': 'it', 'Japanese': 'ja', 'Chinese': 'zh',
+                  'Korean': 'ko', 'Hindi': 'hi', 'Arabic': 'ar', 'Russian': 'ru'
+                };
+                const codes = selected.map(lang => codeMap[lang] || lang);
+                updatePreference('podcastLanguages', codes.length > 0 ? codes : ['en']);
+              }}
+              multiSelect={true}
+              labelColor="#4D5AEE"
+            />
+            <PreferenceDropdown
               label="Notifications"
               options={['Enabled', 'Disabled', 'Only favorites']}
               selectedOptions={preferences.notifications}

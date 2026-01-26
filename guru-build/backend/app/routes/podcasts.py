@@ -63,16 +63,21 @@ def get_podcast_index_headers():
 @router.get("/search")
 async def search_podcasts(
     q: str = Query(..., description="Search query"),
-    limit: int = Query(20, ge=1, le=100, description="Number of results to return")
+    limit: int = Query(20, ge=1, le=100, description="Number of results to return"),
+    lang: Optional[str] = Query("en", description="Filter by language (e.g. 'en')")
 ):
     """
     Search for podcasts by term
     """
     try:
+        params = {'q': q, 'max': limit}
+        if lang:
+            params['lang'] = lang
+
         response = requests.get(
             f"{PODCAST_INDEX_BASE_URL}/search/byterm",
             headers=get_podcast_index_headers(),
-            params={'q': q, 'max': limit}
+            params=params
         )
 
         if not response.ok:
@@ -116,7 +121,8 @@ async def search_podcasts(
 @router.get("/trending")
 async def get_trending_podcasts(
     limit: int = Query(20, ge=1, le=100, description="Number of results to return"),
-    category: Optional[str] = Query(None, description="Filter by category")
+    category: Optional[str] = Query(None, description="Filter by category"),
+    lang: Optional[str] = Query("en", description="Filter by language (e.g. 'en')")
 ):
     """
     Get trending podcasts
@@ -125,6 +131,8 @@ async def get_trending_podcasts(
         params = {'max': limit}
         if category:
             params['cat'] = category
+        if lang:
+            params['lang'] = lang
 
         response = requests.get(
             f"{PODCAST_INDEX_BASE_URL}/podcasts/trending",

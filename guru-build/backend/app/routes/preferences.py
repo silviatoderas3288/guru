@@ -15,6 +15,7 @@ class PreferenceSchema(BaseModel):
     email: str
     podcast_topics: Optional[List[str]] = None
     podcast_length: Optional[str] = None
+    podcast_languages: Optional[List[str]] = None
     notifications: Optional[str] = None
     workout_types: Optional[List[str]] = None
     workout_duration: Optional[str] = None
@@ -42,6 +43,7 @@ class PreferenceResponse(BaseModel):
     """Response schema for preferences."""
     podcast_topics: Optional[List[str]] = None
     podcast_length: Optional[str] = None
+    podcast_languages: Optional[List[str]] = None
     notifications: Optional[str] = None
     workout_types: Optional[List[str]] = None
     workout_duration: Optional[str] = None
@@ -96,6 +98,7 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
         return PreferenceResponse(
             podcast_topics=[],
             podcast_length=None,
+            podcast_languages=['en'],
             notifications=None,
             workout_types=[],
             workout_duration=None,
@@ -122,6 +125,7 @@ async def get_preferences(email: str, db: Session = Depends(get_db)):
     return PreferenceResponse(
         podcast_topics=preferences.podcast_topics or [],
         podcast_length=preferences.podcast_length,
+        podcast_languages=preferences.podcast_languages or ['en'],
         notifications=preferences.notifications,
         workout_types=preferences.workout_types or [],
         workout_duration=preferences.workout_duration,
@@ -164,6 +168,7 @@ async def save_preferences(
         # Update existing preferences
         preferences.podcast_topics = preference_data.podcast_topics
         preferences.podcast_length = preference_data.podcast_length
+        preferences.podcast_languages = preference_data.podcast_languages
         preferences.notifications = preference_data.notifications
         preferences.workout_types = preference_data.workout_types
         preferences.workout_duration = preference_data.workout_duration
@@ -191,6 +196,7 @@ async def save_preferences(
             user_id=user.id,
             podcast_topics=preference_data.podcast_topics,
             podcast_length=preference_data.podcast_length,
+            podcast_languages=preference_data.podcast_languages,
             notifications=preference_data.notifications,
             workout_types=preference_data.workout_types,
             workout_duration=preference_data.workout_duration,
@@ -223,6 +229,7 @@ async def save_preferences(
         "preferences": PreferenceResponse(
             podcast_topics=preferences.podcast_topics or [],
             podcast_length=preferences.podcast_length,
+            podcast_languages=preferences.podcast_languages or ['en'],
             notifications=preferences.notifications,
             workout_types=preferences.workout_types or [],
             workout_duration=preferences.workout_duration,
