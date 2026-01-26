@@ -8,7 +8,8 @@ import {
   ImageBackground,
   Modal,
   ScrollView,
-  Pressable
+  Pressable,
+  TextInput
 } from 'react-native';
 
 interface PreferenceDropdownProps {
@@ -21,6 +22,8 @@ interface PreferenceDropdownProps {
   boxImage?: any;
   arrowImage?: any;
   underlineImage?: any;
+  allowCustom?: boolean;
+  customPlaceholder?: string;
 }
 
 export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
@@ -33,12 +36,24 @@ export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
   boxImage,
   arrowImage,
   underlineImage,
+  allowCustom = false,
+  customPlaceholder = 'Add custom...',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [tempSelections, setTempSelections] = useState<string[]>([]);
+  const [customInput, setCustomInput] = useState('');
+  const [customOptions, setCustomOptions] = useState<string[]>([]);
+
+  // Get all options including custom ones
+  const allOptions = [...options, ...customOptions.filter(c => !options.includes(c))];
 
   const handleOpen = () => {
     setTempSelections([...selectedOptions]);
+    // Add any selected options that aren't in the predefined list as custom options
+    const customFromSelected = selectedOptions.filter(s => !options.includes(s) && !customOptions.includes(s));
+    if (customFromSelected.length > 0) {
+      setCustomOptions(prev => [...prev, ...customFromSelected]);
+    }
     setIsOpen(true);
   };
 
@@ -54,14 +69,29 @@ export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
     }
   };
 
+  const handleAddCustom = () => {
+    const trimmed = customInput.trim();
+    if (trimmed && !allOptions.includes(trimmed) && !tempSelections.includes(trimmed)) {
+      setCustomOptions(prev => [...prev, trimmed]);
+      setTempSelections(prev => [...prev, trimmed]);
+      setCustomInput('');
+    } else if (trimmed && !tempSelections.includes(trimmed)) {
+      // Option exists but not selected, select it
+      setTempSelections(prev => [...prev, trimmed]);
+      setCustomInput('');
+    }
+  };
+
   const handleDone = () => {
     onSelectionChange(tempSelections);
     setIsOpen(false);
+    setCustomInput('');
   };
 
   const handleCancel = () => {
     setTempSelections([...selectedOptions]);
     setIsOpen(false);
+    setCustomInput('');
   };
 
   const displayValue = selectedOptions.length > 0
@@ -114,8 +144,9 @@ export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
         >
           <Pressable style={styles.modalContent}>
             <ScrollView style={styles.optionsList}>
-              {options.map((option, index) => {
+              {allOptions.map((option, index) => {
                 const isSelected = tempSelections.includes(option);
+                const isCustom = !options.includes(option);
                 return (
                   <TouchableOpacity
                     key={index}
@@ -127,9 +158,10 @@ export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
                   >
                     <Text style={[
                       styles.optionText,
-                      isSelected && styles.optionTextSelected
+                      isSelected && styles.optionTextSelected,
+                      isCustom && styles.customOptionText
                     ]}>
-                      {option}
+                      {option}{isCustom ? ' (custom)' : ''}
                     </Text>
                     {isSelected && (
                       <Image
@@ -142,6 +174,27 @@ export const PreferenceDropdown: React.FC<PreferenceDropdownProps> = ({
                 );
               })}
             </ScrollView>
+
+            {/* Custom input field */}
+            {allowCustom && (
+              <View style={styles.customInputContainer}>
+                <TextInput
+                  style={styles.customInput}
+                  value={customInput}
+                  onChangeText={setCustomInput}
+                  placeholder={customPlaceholder}
+                  placeholderTextColor="#999"
+                  onSubmitEditing={handleAddCustom}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={handleAddCustom}
+                >
+                  <Text style={styles.addButtonText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <TouchableOpacity
               style={styles.doneButton}
@@ -253,5 +306,41 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Margarine',
     fontWeight: '700',
+  },
+  customOptionText: {
+    fontStyle: 'italic',
+  },
+  customInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 5,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.3)',
+    paddingTop: 15,
+  },
+  customInput: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontFamily: 'Margarine',
+    color: '#FFF',
+  },
+  addButton: {
+    backgroundColor: '#FF9D00',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  addButtonText: {
+    color: '#FFF',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
 });

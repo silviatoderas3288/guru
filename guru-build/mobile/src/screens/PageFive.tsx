@@ -11,6 +11,12 @@ import { usePreferencesStore } from '../store/usePreferencesStore';
 import schedulingAgentApi, { GenerateScheduleResponse, ScheduledEvent } from '../services/schedulingAgentApi';
 import { CalendarApiService, CalendarEvent } from '../services/calendarApi';
 import { ListItemApiService, ListItemType } from '../services/listItemApi';
+import {
+  scheduleSleepNotifications,
+  requestNotificationPermissions,
+  getScheduledSleepNotifications,
+  sendTestNotificationNow
+} from '../services/sleepNotificationService';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -1297,6 +1303,63 @@ export const PageFive: React.FC = () => {
     );
   };
 
+  const handleTestSleepNotifications = async () => {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) {
+      Alert.alert('Permission Denied', 'Please enable notifications in your device settings.');
+      return;
+    }
+
+    const bedTime = preferences.bedTime[0] || '10:00 PM';
+    const wakeTime = preferences.wakeTime[0] || '7:00 AM';
+
+    // If "Now (Test)" is selected, send immediate notification
+    if (bedTime === 'Now (Test)') {
+      const sent = await sendTestNotificationNow();
+      if (sent) {
+        Alert.alert(
+          'Test Notification Sent',
+          'A test bedtime notification will appear in 5 seconds.\n\nMake sure to background the app to see it!',
+          [{ text: 'OK' }]
+        );
+      }
+      return;
+    }
+
+    const result = await scheduleSleepNotifications(bedTime, wakeTime);
+
+    const scheduled = await getScheduledSleepNotifications();
+    console.log('Scheduled notifications:', scheduled);
+
+    // Build detailed debug info
+    const debugDetails = scheduled.map((notif, index) => {
+      const trigger = notif.trigger as any;
+      let triggerInfo = '';
+
+      if (trigger?.type === 'daily') {
+        triggerInfo = `Daily at ${trigger.hour}:${String(trigger.minute).padStart(2, '0')}`;
+      } else if (trigger?.type === 'weekly') {
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        triggerInfo = `${days[trigger.weekday]} at ${trigger.hour}:${String(trigger.minute).padStart(2, '0')}`;
+      } else {
+        triggerInfo = JSON.stringify(trigger);
+      }
+
+      return `${index + 1}. ${notif.content.title}\n   ${triggerInfo}`;
+    }).join('\n\n');
+
+    if (result.bedtimeScheduled && result.wakeupScheduled) {
+      Alert.alert(
+        'Notifications Scheduled',
+        `Bed Time: ${bedTime}\nWake Time: ${wakeTime}\n\n` +
+        `Scheduled ${scheduled.length} notifications:\n\n${debugDetails}`,
+        [{ text: 'OK' }]
+      );
+    } else {
+      Alert.alert('Error', 'Failed to schedule some notifications. Check console for details.');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -1505,7 +1568,7 @@ export const PageFive: React.FC = () => {
           <CollapsibleSection title="Sleep Schedule" transparent={true}>
             <PreferenceDropdown
               label="Bed Time"
-              options={['09:00 PM', '09:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM', '12:30 AM']}
+              options={[/* 'Now (Test)', */ '09:00 PM', '09:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM', '12:30 AM']}
               selectedOptions={preferences.bedTime}
               onSelectionChange={(selected) => updatePreference('bedTime', selected)}
               multiSelect={false}
@@ -1527,6 +1590,23 @@ export const PageFive: React.FC = () => {
               keyboardType="numeric"
               labelColor="#4D5AEE"
             />
+            {/* Test button - uncomment to enable
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#4D5AEE',
+                paddingVertical: 12,
+                paddingHorizontal: 20,
+                borderRadius: 10,
+                marginTop: 10,
+                alignItems: 'center',
+              }}
+              onPress={handleTestSleepNotifications}
+            >
+              <Text style={{ color: '#FFF', fontFamily: 'Margarine', fontSize: 14 }}>
+                Test Sleep Notifications
+              </Text>
+            </TouchableOpacity>
+            */}
           </CollapsibleSection>
 
           {/* Focus Time (App Blocking) */}
@@ -1541,11 +1621,13 @@ export const PageFive: React.FC = () => {
             />
             <PreferenceDropdown
               label="Blocked Apps"
-              options={['Instagram', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'Snapchat', 'Reddit', 'Netflix']}
+              options={['Instagram', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'Snapchat', 'Reddit', 'Netflix', 'News', 'WhatsApp', 'Messenger', 'LinkedIn', 'Pinterest', 'Twitch', 'Discord']}
               selectedOptions={preferences.blockedApps}
               onSelectionChange={(selected) => updatePreference('blockedApps', selected)}
               multiSelect={true}
               labelColor="#4D5AEE"
+              allowCustom={true}
+              customPlaceholder="Add app name..."
             />
           </CollapsibleSection>
 

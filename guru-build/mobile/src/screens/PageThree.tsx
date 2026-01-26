@@ -92,12 +92,14 @@ interface Podcast {
   artwork: string;
   url?: string; // RSS feed URL or podcast website
   website?: string; // Podcast website
+  internalId?: string; // DB ID for saved podcasts
 }
 
 interface Episode {
   id: string;
   title: string;
   podcast: string;
+  podcastId?: string; // External Podcast ID
   duration: string;
   artwork: string;
   podcastArtwork?: string; // Fallback if episode has no image
@@ -154,6 +156,9 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   // Interest tracking state (podcasts user doesn't want to see)
   const [dislikedPodcastIds, setDislikedPodcastIds] = useState<Set<string>>(new Set());
   const [likedPodcastIds, setLikedPodcastIds] = useState<Set<string>>(new Set());
+
+  // Track failed image loads
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   // Library API base URL
   const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
@@ -242,6 +247,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
         id: episode.id,
         title: episode.title,
         podcast: episode.podcastName || episode.feedTitle || 'Unknown Podcast',
+        podcastId: episode.feedId || (favoritePodcasts.find(p => p.name === episode.podcastName)?.id) || '',
         duration: PodcastApiService.formatDuration(episode.duration),
         artwork: episode.image || episode.podcastArtwork || 'https://via.placeholder.com/300',
         podcastArtwork: episode.podcastArtwork,
@@ -335,6 +341,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
         const data = await response.json();
         const formatted = data.map((p: any) => ({
           id: p.external_id,
+          internalId: p.id,
           title: p.title,
           artist: p.author || 'Unknown',
           duration: '',
@@ -363,7 +370,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
           id: episode.id || episode.external_id,
           title: episode.title,
           podcast: episode.podcast_title || selectedSavedPodcast?.title || 'Unknown',
-          duration: episode.duration || 'Unknown',
+          duration: episode.duration || '',
           artwork: episode.image_url || selectedSavedPodcast?.artwork || 'https://via.placeholder.com/300',
           podcastArtwork: selectedSavedPodcast?.artwork,
           link: episode.link,
@@ -406,6 +413,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
         id: String(episode.id),
         title: episode.title,
         podcast: selectedSavedPodcast.title,
+        podcastId: selectedSavedPodcast.id,
         duration: PodcastApiService.formatDuration(episode.duration),
         artwork: episode.image || selectedSavedPodcast.artwork || 'https://via.placeholder.com/300',
         podcastArtwork: selectedSavedPodcast.artwork,
@@ -465,13 +473,13 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
   };
 
   // Save podcast to library
-  const handleSavePodcast = async (podcast: Podcast) => {
+  const handleSavePodcast = async (podcast: Podcast, silent: boolean = false): Promise<string | null> => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/library/podcasts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          external_id: podcast.id,
+          external_id: String(podcast.id),
           title: podcast.title,
           image_url: podcast.artwork,
           author: podcast.artist,
@@ -480,21 +488,158 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       });
 
       if (response.ok) {
+        const data = await response.json();
         await loadSavedPodcasts();
         // Record save interaction for ML recommendations
         recommendationApi.recordSave(podcast.id).catch(err =>
           console.log('Failed to record save interaction:', err)
         );
-        Alert.alert('Saved', `"${podcast.title}" has been saved to your library.`);
+        if (!silent) {
+            Alert.alert('Saved', `"${podcast.title}" has been saved to your library.`);
+        }
+        return data.id;
       } else {
         const errorData = await response.text();
         console.error('Save error response:', errorData);
         Alert.alert('Error', 'Failed to save podcast. Please try again.');
+        return null;
       }
     } catch (error) {
       console.error('Save error:', error);
       Alert.alert('Error', 'Failed to save podcast. Check your connection and try again.');
+      return null;
     }
+  };
+
+  const handleSaveEpisode = async (episode: Episode, podcast?: Podcast) => {
+    try {
+      // 1. Determine podcast info
+      let podcastInfo = podcast;
+
+      // If no podcast object passed, try to find it
+      if (!podcastInfo) {
+          if (episode.podcastId) {
+             // Try to find in saved podcasts first (using external ID)
+             podcastInfo = savedPodcasts.find(p => p.id === episode.podcastId);
+
+             // Try current favorites
+             if (!podcastInfo) {
+               podcastInfo = currentFavorites.find(p => p.id === episode.podcastId);
+             }
+
+             // Try recommendations
+             if (!podcastInfo) {
+               podcastInfo = recommendations.find(p => p.id === episode.podcastId);
+             }
+          }
+
+          if (!podcastInfo && selectedPodcast) {
+             // If we are in the context of a selected podcast
+             if (selectedPodcast.title === episode.podcast || selectedPodcast.id === episode.podcastId) {
+                 podcastInfo = selectedPodcast;
+             }
+          }
+
+          // Last resort: construct podcast info from episode data
+          if (!podcastInfo && episode.podcastId && episode.podcast) {
+             podcastInfo = {
+               id: episode.podcastId,
+               title: episode.podcast,
+               artist: '',
+               duration: '',
+               artwork: episode.podcastArtwork || episode.artwork || 'https://via.placeholder.com/300',
+               url: '',
+               website: '',
+             };
+          }
+      }
+
+      if (!podcastInfo) {
+        console.log('Could not determine podcast for episode:', episode.title, 'podcastId:', episode.podcastId);
+        Alert.alert('Error', 'Could not save episode: missing podcast information');
+        return;
+      }
+
+      // 2. Check if podcast is saved (we need internal ID)
+      let internalPodcastId = podcastInfo.internalId;
+      
+      if (!internalPodcastId) {
+          // Check if it is in savedPodcasts (maybe passed as prop without internalId)
+          const saved = savedPodcasts.find(p => p.id === podcastInfo!.id);
+          if (saved) {
+              internalPodcastId = saved.internalId;
+          } else {
+              // Podcast is not saved, save it first. Use silent=true to avoid double popup.
+              const newId = await handleSavePodcast(podcastInfo, true);
+              if (!newId) return; // Error handled in handleSavePodcast
+              internalPodcastId = newId;
+          }
+      }
+
+      // 3. Save Episode
+      const response = await fetch(`${API_BASE_URL}/api/v1/library/episodes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              external_id: String(episode.id),
+              title: episode.title,
+              description: '',
+              duration: 0,
+              image_url: episode.artwork,
+              published_at: 0,
+              podcast_id: internalPodcastId
+          })
+      });
+      
+      if (response.ok) {
+          Alert.alert('Saved', 'Episode saved to library');
+          // Reload saved episodes if we are viewing that podcast
+          if (selectedSavedPodcast && selectedSavedPodcast.id === podcastInfo.id) {
+              loadSavedEpisodes(podcastInfo.id);
+          }
+      } else {
+          const err = await response.text();
+          console.log('Save episode error:', err);
+          Alert.alert('Error', 'Failed to save episode');
+      }
+
+    } catch (error) {
+        console.error('Save episode error:', error);
+        Alert.alert('Error', 'Failed to save episode');
+    }
+  };
+
+  // Remove saved episode from library
+  const handleRemoveSavedEpisode = (episode: Episode) => {
+    Alert.alert(
+      'Remove Episode',
+      `Remove "${episode.title}" from your saved episodes?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(`${API_BASE_URL}/api/v1/library/episodes/${episode.id}`, {
+                method: 'DELETE',
+              });
+              if (response.ok) {
+                // Reload saved episodes
+                if (selectedSavedPodcast) {
+                  loadSavedEpisodes(selectedSavedPodcast.id);
+                }
+              } else {
+                Alert.alert('Error', 'Failed to remove episode');
+              }
+            } catch (error) {
+              console.error('Remove episode error:', error);
+              Alert.alert('Error', 'Failed to remove episode');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const removeRecommendation = async (podcast: Podcast) => {
@@ -683,6 +828,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
         id: String(episode.id),
         title: episode.title,
         podcast: (podcast as Podcast).title,
+        podcastId: (podcast as Podcast).id,
         duration: PodcastApiService.formatDuration(episode.duration),
         artwork: episode.image || (podcast as Podcast).artwork,
         podcastArtwork: (podcast as Podcast).artwork,
@@ -788,6 +934,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
         id: String(episode.id),
         title: episode.title,
         podcast: selectedPodcast.title,
+        podcastId: selectedPodcast.id,
         duration: PodcastApiService.formatDuration(episode.duration),
         artwork: episode.image || selectedPodcast.artwork,
         podcastArtwork: selectedPodcast.artwork,
@@ -1152,6 +1299,27 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                         style={styles.innerRectImage}
                         resizeMode="cover"
                       />
+                      <TouchableOpacity
+                        style={{
+                          position: 'absolute',
+                          top: 10,
+                          right: 10,
+                          zIndex: 10,
+                          backgroundColor: 'rgba(0,0,0,0.3)',
+                          borderRadius: 15,
+                          padding: 5
+                        }}
+                        onPress={() => {
+                           const podcast = currentFavorites.find(p => p.id === episode.podcastId);
+                           handleSaveEpisode(episode, podcast);
+                        }}
+                      >
+                        <Ionicons
+                          name="heart-outline"
+                          size={18}
+                          color="#FFF"
+                        />
+                      </TouchableOpacity>
                     </ImageBackground>
                     <View style={styles.episodeTitleContainer}>
                       <Text style={styles.episodeTitle} numberOfLines={2}>
@@ -1246,11 +1414,15 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                     tintColor={index % 2 === 0 ? '#FF9D00' : '#4D5AEE'}
                   >
                     <Image
-                      source={podcast.artwork && podcast.artwork !== 'https://via.placeholder.com/300'
+                      source={podcast.artwork &&
+                        podcast.artwork !== 'https://via.placeholder.com/300' &&
+                        !failedImages.has(podcast.id) &&
+                        !podcast.artwork.includes('transistorcdn.com')
                         ? { uri: podcast.artwork }
                         : require('../../assets/pod.png')}
                       style={styles.innerSquareImage}
                       resizeMode="cover"
+                      onError={() => setFailedImages(prev => new Set(prev).add(podcast.id))}
                     />
                     <TouchableOpacity
                       style={{
@@ -1575,6 +1747,18 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                       >
                         <CalendarIcon color="#FF9D00" />
                       </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={{
+                          position: 'absolute',
+                          top: 10,
+                          right: 12,
+                          zIndex: 5,
+                        }}
+                        onPress={() => handleSaveEpisode(episode, selectedPodcast || undefined)}
+                      >
+                        <Ionicons name="heart-outline" size={22} color="#FF9D00" />
+                      </TouchableOpacity>
                     </ImageBackground>
                   </View>
                 ))}
@@ -1745,7 +1929,7 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
           style={styles.modalOverlay}
           onPress={() => setShowSavedEpisodesModal(false)}
         >
-          <Pressable style={styles.episodeSelectionContent}>
+          <Pressable style={[styles.episodeSelectionContent, { flexDirection: 'column' }]}>
             <TouchableOpacity
               style={styles.scheduleCloseButton}
               onPress={() => setShowSavedEpisodesModal(false)}
@@ -1753,60 +1937,109 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
               <Text style={styles.scheduleCloseButtonText}>✕</Text>
             </TouchableOpacity>
 
-            <Text style={styles.scheduleOptionsTitle}>
-              {selectedSavedPodcast?.title}
-            </Text>
-            <Text style={styles.episodeSubtitle}>
-              {savedEpisodes.length === 0 ? 'No saved episodes' : `${savedEpisodes.length} saved episode${savedEpisodes.length !== 1 ? 's' : ''}`}
-            </Text>
-
             {loadingSavedEpisodes ? (
               <View style={styles.loadingEpisodesContainer}>
                 <ActivityIndicator size="large" color="#4D5AEE" />
                 <Text style={styles.loadingEpisodesText}>Loading episodes...</Text>
               </View>
-            ) : savedEpisodes.length > 0 ? (
-              <ScrollView style={styles.episodesList} showsVerticalScrollIndicator={false}>
-                {savedEpisodes.map((episode) => (
-                  <TouchableOpacity
-                    key={episode.id}
-                    style={styles.episodeItem}
-                    onPress={() => handleSchedule(episode)}
-                  >
-                    <Image
-                      source={episode.artwork && episode.artwork !== 'https://via.placeholder.com/300'
-                        ? { uri: episode.artwork }
-                        : require('../../assets/pod.png')}
-                      style={styles.episodeItemImage}
-                    />
-                    <View style={styles.episodeItemInfo}>
-                      <Text style={styles.episodeItemTitle} numberOfLines={2}>
-                        {episode.title}
-                      </Text>
-                      <Text style={styles.episodeItemDuration}>{episode.duration}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
             ) : (
-              <View style={styles.loadingEpisodesContainer}>
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}
+                showsVerticalScrollIndicator={true}
+              >
+                <Text style={styles.scheduleOptionsTitle}>
+                  {selectedSavedPodcast?.title}
+                </Text>
+                <Text style={styles.episodeSubtitle}>
+                  {savedEpisodes.length === 0 ? 'No saved episodes' : `${savedEpisodes.length} saved episode${savedEpisodes.length !== 1 ? 's' : ''}`}
+                </Text>
 
-                
-                <TouchableOpacity
-                  style={styles.exploreEpisodesButton}
-                  onPress={handleExploreEpisodes}
-                  disabled={loadingEpisodes}
-                >
-                  <LinearGradient
-                    colors={['#FF9D00', '#FF9D00']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.exploreEpisodesGradient}
+                {savedEpisodes.length > 0 && (
+                  <>
+                    <Text style={{
+                      fontSize: 16,
+                      fontFamily: 'Margarine',
+                      color: '#FFF',
+                      marginBottom: 10,
+                      marginTop: 5,
+                      textAlign: 'center'
+                    }}>Your Saved Episodes</Text>
+                    <View>
+                      {savedEpisodes.map((episode) => (
+                        <View key={episode.id} style={styles.episodeItemContainer}>
+                          <ImageBackground
+                            source={require('../../assets/box.png')}
+                            resizeMode="stretch"
+                            style={styles.episodeRowFrame}
+                          >
+                            <TouchableOpacity
+                              style={styles.episodeRowInner}
+                              onPress={() => handleSchedule(episode)}
+                              activeOpacity={0.85}
+                            >
+                              <Image
+                                source={episode.artwork &&
+                                  episode.artwork !== 'https://via.placeholder.com/300' &&
+                                  !failedImages.has(episode.id) &&
+                                  !episode.artwork.includes('transistorcdn.com')
+                                  ? { uri: episode.artwork }
+                                  : require('../../assets/pod.png')}
+                                style={styles.episodeItemImage}
+                                onError={() => setFailedImages(prev => new Set(prev).add(episode.id))}
+                              />
+                              <View style={styles.episodeItemInfo}>
+                                <Text style={styles.episodeItemTitle} numberOfLines={2}>
+                                  {episode.title}
+                                </Text>
+                                <Text style={styles.episodeItemDuration}>{episode.duration}</Text>
+                              </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={styles.calendarButtonBottom}
+                              onPress={() => handleSchedule(episode)}
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                              activeOpacity={0.85}
+                            >
+                              <CalendarIcon color="#FF9D00" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={{
+                                position: 'absolute',
+                                top: 10,
+                                right: 12,
+                                zIndex: 5,
+                              }}
+                              onPress={() => handleRemoveSavedEpisode(episode)}
+                            >
+                              <Ionicons name="heart" size={22} color="#FF9D00" />
+                            </TouchableOpacity>
+                          </ImageBackground>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                <View style={{ alignItems: 'center', marginTop: 20, marginBottom: 10 }}>
+                  <TouchableOpacity
+                    style={styles.exploreEpisodesButton}
+                    onPress={handleExploreEpisodes}
+                    disabled={loadingEpisodes}
                   >
-                    <Text style={styles.exploreEpisodesText}> Explore Episodes</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
+                    <LinearGradient
+                      colors={['#FF9D00', '#FF9D00']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.exploreEpisodesGradient}
+                    >
+                      <Text style={styles.exploreEpisodesText}>Explore Episodes</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             )}
           </Pressable>
         </Pressable>
@@ -2672,7 +2905,8 @@ datePickerCancelText: {
     borderRadius: 20,
     padding: 20,
     width: '90%',
-    maxHeight: '80%',
+    minHeight: 450,
+    maxHeight: '90%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
