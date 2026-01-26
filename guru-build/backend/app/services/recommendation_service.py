@@ -308,8 +308,11 @@ class RecommendationService:
         preferred_topics = []
         if user_prefs and user_prefs.podcast_topics:
             preferred_topics.extend(user_prefs.podcast_topics)
-        if media_prefs and media_prefs.topics:
-            preferred_topics.extend(media_prefs.topics)
+        if media_prefs:
+            if media_prefs.topics:
+                preferred_topics.extend(media_prefs.topics)
+            if media_prefs.podcast_genres:
+                preferred_topics.extend(media_prefs.podcast_genres)
 
         if preferred_topics:
             # Search for podcasts matching user's stated preferences

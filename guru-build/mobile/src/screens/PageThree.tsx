@@ -212,6 +212,14 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       });
       setCurrentFavorites(formattedFavorites);
 
+      // Send favorites to ML recommendation system as "like" signals
+      // This helps the algorithm learn user preferences
+      for (const podcast of favoritePodcasts) {
+        recommendationApi.likePodcast(podcast.id).catch(() => {
+          // Silent fail - don't block UI for ML tracking
+        });
+      }
+
       // Load recent episodes from favorite podcasts only
       const allEpisodes: any[] = [];
       for (const podcast of favoritePodcasts) {
@@ -1050,6 +1058,30 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                           style={styles.innerSquareImage}
                           resizeMode="cover"
                         />
+                        <TouchableOpacity
+                          style={{
+                            position: 'absolute',
+                            top: 5,
+                            right: 5,
+                            zIndex: 10,
+                            backgroundColor: 'rgba(0,0,0,0.3)',
+                            borderRadius: 15,
+                            padding: 5
+                          }}
+                          onPress={() => {
+                            if (isPodcastSaved(podcast.id)) {
+                              handleRemoveSavedPodcast(podcast);
+                            } else {
+                              handleSavePodcast(podcast);
+                            }
+                          }}
+                        >
+                          <Ionicons
+                            name={isPodcastSaved(podcast.id) ? "heart" : "heart-outline"}
+                            size={18}
+                            color="#FFF"
+                          />
+                        </TouchableOpacity>
                       </ImageBackground>
                       <Text style={styles.searchResultTitle} numberOfLines={2}>{podcast.title}</Text>
                     </TouchableOpacity>
@@ -1294,33 +1326,6 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
               </TouchableOpacity>
             )}
 
-            {/* Interest Buttons (Thumbs Up / Thumbs Down) */}
-            {selectedPodcast && (
-              <View style={styles.interestButtonsContainer}>
-                <Text style={styles.interestLabel}>Interested?</Text>
-                <View style={styles.interestButtons}>
-                  <TouchableOpacity
-                    style={[
-                      styles.interestButton,
-                      styles.thumbsDownButton,
-                    ]}
-                    onPress={() => handleDislikePodcast(selectedPodcast)}
-                  >
-                    <Text style={styles.interestButtonIcon}>👎</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.interestButton,
-                      styles.thumbsUpButton,
-                      isPodcastLiked(selectedPodcast.id) && styles.thumbsUpButtonActive,
-                    ]}
-                    onPress={() => handleLikePodcast(selectedPodcast)}
-                  >
-                    <Text style={styles.interestButtonIcon}>👍</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
           </Pressable>
         </Pressable>
       </Modal>
