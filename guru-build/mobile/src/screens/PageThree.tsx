@@ -546,10 +546,6 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
       'Choose an action',
       [
         {
-          text: 'Save to Library',
-          onPress: () => handleSavePodcast(podcast)
-        },
-        {
           text: 'Remove Recommendation',
           style: 'destructive',
           onPress: () => removeRecommendation(podcast)
@@ -1183,7 +1179,6 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                       key={podcast.id}
                       style={styles.recommendationItemWrapper}
                       onPress={() => handleSavedPodcastClick(podcast)}
-                      onLongPress={() => handleRemoveSavedPodcast(podcast)}
                     >
                       <ImageBackground
                         source={require('../../assets/sq.png')}
@@ -1198,12 +1193,30 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                           style={styles.innerSquareImage}
                           resizeMode="cover"
                         />
+                        <TouchableOpacity
+                          style={{
+                            position: 'absolute',
+                            top: 5,
+                            right: 5,
+                            zIndex: 10,
+                            backgroundColor: 'rgba(0,0,0,0.3)',
+                            borderRadius: 15,
+                            padding: 5
+                          }}
+                          onPress={() => handleRemoveSavedPodcast(podcast)}
+                        >
+                          <Ionicons
+                            name="heart"
+                            size={18}
+                            color="#FFF"
+                          />
+                        </TouchableOpacity>
                       </ImageBackground>
                       <Text style={styles.searchResultTitle} numberOfLines={2}>{podcast.title}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
-                <Text style={styles.savedHint}>Tap to view episodes and Long press to remove</Text>
+                <Text style={styles.savedHint}>Tap to view episodes</Text>
               </>
             ) : (
               <Text style={styles.emptyStateText}>No saved podcasts yet</Text>
@@ -1239,6 +1252,30 @@ export const PageThree: React.FC<PageThreeProps> = ({ onNavigateToCalendar }) =>
                       style={styles.innerSquareImage}
                       resizeMode="cover"
                     />
+                    <TouchableOpacity
+                      style={{
+                        position: 'absolute',
+                        top: 5,
+                        right: 5,
+                        zIndex: 10,
+                        backgroundColor: 'rgba(0,0,0,0.3)',
+                        borderRadius: 15,
+                        padding: 5
+                      }}
+                      onPress={() => {
+                        if (isPodcastSaved(podcast.id)) {
+                          handleRemoveSavedPodcast(podcast);
+                        } else {
+                          handleSavePodcast(podcast);
+                        }
+                      }}
+                    >
+                      <Ionicons
+                        name={isPodcastSaved(podcast.id) ? "heart" : "heart-outline"}
+                        size={18}
+                        color="#FFF"
+                      />
+                    </TouchableOpacity>
                   </ImageBackground>
                   <Text style={styles.recommendationTitle} numberOfLines={2}>{podcast.title}</Text>
                 </TouchableOpacity>
