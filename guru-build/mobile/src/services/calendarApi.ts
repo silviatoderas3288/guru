@@ -3,9 +3,9 @@
  */
 
 import { GoogleAuthService } from './googleAuth';
+import { API_URL } from './apiConfig';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
-console.log('Calendar API URL:', API_BASE_URL);
+console.log('Calendar API URL:', API_URL);
 
 /**
  * Helper to make API calls with better error handling.
@@ -60,7 +60,7 @@ export class CalendarApiService {
     accessToken: string,
     refreshToken?: string
   ): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/calendar/oauth/tokens`, {
+    const response = await fetch(`${API_URL}/api/v1/calendar/oauth/tokens`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -93,7 +93,7 @@ export class CalendarApiService {
       params.append('time_max', timeMax.toISOString());
     }
 
-    const url = `${API_BASE_URL}/api/v1/calendar/events?${params.toString()}`;
+    const url = `${API_URL}/api/v1/calendar/events?${params.toString()}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
@@ -126,7 +126,7 @@ export class CalendarApiService {
   static async createCalendarEvent(
     event: Omit<CalendarEvent, 'id' | 'html_link' | 'created' | 'updated'>
   ): Promise<CalendarEvent> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/calendar/events`, {
+    const response = await fetch(`${API_URL}/api/v1/calendar/events`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -149,7 +149,7 @@ export class CalendarApiService {
     eventId: string,
     updates: Partial<Omit<CalendarEvent, 'id' | 'html_link' | 'created' | 'updated'>>
   ): Promise<CalendarEvent> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/calendar/events/${eventId}`, {
+    const response = await fetch(`${API_URL}/api/v1/calendar/events/${eventId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -169,7 +169,7 @@ export class CalendarApiService {
    * Delete a calendar event.
    */
   static async deleteCalendarEvent(eventId: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/calendar/events/${eventId}`, {
+    const response = await fetch(`${API_URL}/api/v1/calendar/events/${eventId}`, {
       method: 'DELETE',
     });
 
@@ -185,7 +185,7 @@ export class CalendarApiService {
   static async getAvailableSlots(
     request: AvailableSlotsRequest
   ): Promise<AvailableSlot[]> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/calendar/available-slots`, {
+    const response = await fetch(`${API_URL}/api/v1/calendar/available-slots`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

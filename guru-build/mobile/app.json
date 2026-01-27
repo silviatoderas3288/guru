@@ -5,7 +5,7 @@
     "owner": "silviatoderas3288",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "../images/elements/guru_logo.png",
+    "icon": "./assets/guru_logo_square.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "scheme": "guru",
@@ -27,7 +27,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "../images/elements/guru_logo.png",
+        "foregroundImage": "./assets/guru_logo_square.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.silviatoderas.guru",

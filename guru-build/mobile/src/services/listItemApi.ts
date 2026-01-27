@@ -1,11 +1,11 @@
 import axios from 'axios';
 import { GoogleAuthService } from './googleAuth';
+import { API_URL } from './apiConfig';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
-console.log('List Item API URL:', API_BASE_URL);
+console.log('List Item API URL:', API_URL);
 
 const listItemApi = axios.create({
-  baseURL: `${API_BASE_URL}/api/v1/list-items`,
+  baseURL: `${API_URL}/api/v1/list-items`,
 });
 
 // Add auth interceptor

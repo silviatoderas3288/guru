@@ -10,7 +10,8 @@ const getBaseUrl = () => {
     return 'http://10.0.2.2:8000';
   }
   
-  return 'http://192.168.1.47:8000';
+  // Default to localhost
+  return 'http://localhost:8000';
 };
 
 export const API_URL = getBaseUrl();

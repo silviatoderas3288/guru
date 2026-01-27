@@ -1,0 +1,31 @@
+# Render Blueprint for Guru App
+# Deploy at: https://dashboard.render.com/blueprints
+
+databases:
+  - name: guru-db
+    databaseName: guru_db
+    user: guru
+    plan: free
+    region: oregon
+
+services:
+  - type: web
+    name: guru-api
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: guru-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
