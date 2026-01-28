@@ -48,13 +48,20 @@ async def startup_event():
     try:
         from alembic.config import Config
         from alembic import command
-        
+
         logger.info("Running database migrations...")
         alembic_ini_path = backend_dir / "alembic.ini"
         alembic_cfg = Config(str(alembic_ini_path))
         # Ensure script location is absolute to avoid CWD issues
         alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
-        
+
+        # Fix DATABASE_URL if needed (Render uses postgres:// but SQLAlchemy requires postgresql://)
+        database_url = os.getenv("DATABASE_URL")
+        if database_url and database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+            alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+            logger.info(f"Fixed DATABASE_URL scheme for SQLAlchemy")
+
         # Run upgrade
         command.upgrade(alembic_cfg, "head")
         logger.info("Database migrations completed successfully.")
