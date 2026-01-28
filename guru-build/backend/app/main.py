@@ -84,6 +84,30 @@ async def health_check():
     return {"status": "healthy"}
 
 
+@app.get("/debug/tables")
+async def debug_tables():
+    """Debug endpoint to check what tables exist in the database."""
+    from sqlalchemy import inspect, text
+    from app.database import engine
+
+    try:
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+
+        # Also try to query the database directly
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"))
+            db_tables = [row[0] for row in result]
+
+        return {
+            "inspector_tables": tables,
+            "direct_query_tables": db_tables,
+            "database_url": os.getenv("DATABASE_URL", "").split("@")[-1] if os.getenv("DATABASE_URL") else "Not set"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # Import and include routers
 from app.routes import calendar, bingo, journal, list_items, preferences, spotify, podcasts, workouts, schedule_agent, library, recommendations
 
