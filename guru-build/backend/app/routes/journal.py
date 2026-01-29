@@ -18,14 +18,28 @@ async def get_current_user(db: Session = Depends(get_db)) -> User:
     For development, returns the most recently updated user.
     TODO: Implement proper authentication middleware with JWT tokens
     """
-    # For now, return the most recently updated user (development only)
-    user = db.query(User).order_by(User.updated_at.desc()).first()
-    if not user:
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        # For now, return the most recently updated user (development only)
+        user = db.query(User).order_by(User.updated_at.desc()).first()
+        if not user:
+            logger.error("No user found in database")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="No user found. Please authenticate first by signing in with Google."
+            )
+        logger.info(f"Found user: {user.email}")
+        return user
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting current user: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No user found. Please authenticate first."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving user: {str(e)}"
         )
-    return user
 
 
 @router.get("/", response_model=List[JournalEntryResponse])
