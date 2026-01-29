@@ -66,7 +66,35 @@ async def startup_event():
         command.upgrade(alembic_cfg, "head")
         logger.info("Database migrations completed successfully.")
     except Exception as e:
-        logger.error(f"Error running database migrations: {e}")
+        logger.error(f"Error running database migrations: {e}", exc_info=True)
+
+    # Ensure journal_entries table exists (workaround for migration issues)
+    try:
+        from sqlalchemy import inspect, text
+        from app.database import engine
+
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+
+        if 'journal_entries' not in tables:
+            logger.warning("journal_entries table missing, creating it now...")
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS journal_entries (
+                        id SERIAL PRIMARY KEY,
+                        user_id UUID NOT NULL REFERENCES users(id),
+                        timestamp TIMESTAMP NOT NULL,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                conn.commit()
+            logger.info("journal_entries table created successfully")
+        else:
+            logger.info("journal_entries table already exists")
+    except Exception as e:
+        logger.error(f"Error ensuring journal_entries table: {e}", exc_info=True)
 
 @app.get("/")
 async def root():
