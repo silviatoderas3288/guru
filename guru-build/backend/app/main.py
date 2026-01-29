@@ -108,6 +108,30 @@ async def debug_tables():
         return {"error": str(e)}
 
 
+@app.post("/admin/trigger-weekly-cleanup")
+async def trigger_weekly_cleanup_manually():
+    """
+    Manual trigger for weekly cleanup task (for testing).
+    In production, this runs automatically every Sunday at midnight.
+    """
+    from app.tasks.weekly_cleanup import cleanup_and_reschedule_tasks
+
+    try:
+        # Trigger the task asynchronously
+        task = cleanup_and_reschedule_tasks.delay()
+
+        return {
+            "status": "success",
+            "message": "Weekly cleanup task triggered",
+            "task_id": task.id
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
 # Import and include routers
 from app.routes import calendar, bingo, journal, list_items, preferences, spotify, podcasts, workouts, schedule_agent, library, recommendations
 

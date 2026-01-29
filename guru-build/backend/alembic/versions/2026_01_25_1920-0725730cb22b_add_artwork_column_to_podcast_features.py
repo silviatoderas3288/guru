@@ -18,8 +18,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add artwork column to podcast_features table
-    op.add_column('podcast_features', sa.Column('artwork', sa.String(), nullable=True))
+    # Add artwork column to podcast_features table if it doesn't exist
+    from sqlalchemy import inspect
+    from sqlalchemy.engine import reflection
+
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    columns = [col['name'] for col in inspector.get_columns('podcast_features')]
+
+    if 'artwork' not in columns:
+        op.add_column('podcast_features', sa.Column('artwork', sa.String(), nullable=True))
 
 
 def downgrade() -> None:
