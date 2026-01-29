@@ -108,6 +108,26 @@ async def debug_tables():
         return {"error": str(e)}
 
 
+@app.get("/debug/users")
+async def debug_users():
+    """Debug endpoint to check users in database."""
+    from sqlalchemy.orm import Session
+    from app.database import get_db
+    from app.models.user import User
+
+    db = next(get_db())
+    try:
+        users = db.query(User).all()
+        return {
+            "user_count": len(users),
+            "users": [{"id": str(u.id), "email": u.email, "created_at": u.created_at.isoformat(), "updated_at": u.updated_at.isoformat()} for u in users]
+        }
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+    finally:
+        db.close()
+
+
 @app.post("/admin/trigger-weekly-cleanup")
 async def trigger_weekly_cleanup_manually():
     """
