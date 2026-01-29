@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 # Dependency to get current user (placeholder - implement with your auth system)
-async def get_current_user(db: Session = Depends(get_db)) -> User:
+def get_current_user(db: Session = Depends(get_db)) -> User:
     """
     Get current authenticated user.
     For development, returns the most recently updated user.
